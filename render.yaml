@@ -14,4 +14,4 @@ services:
       - key: COOCLE_PREWARM_ASTRA
         value: "0"
       - key: COOCLE_START_CRAWLER
-        value: "0"
+        value: "1"
