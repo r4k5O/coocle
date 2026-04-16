@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# Local databases and generated data
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs and local debug artifacts
+*.log
+*.webp
+backfill_*.txt
+item_8_input.txt
+debug_ollama.py
+test_item_8.py
+
+# Build artifacts
+dist/
+build/

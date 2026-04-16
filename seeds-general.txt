@@ -1,0 +1,148 @@
+# 100+ Diverse Seed URLs for Coocle (Multilingual / Non-Developer)
+# Topics: News, Recipes, Science, History, Travel, Sports, Tech, Lifestyle
+
+# --- NEWS & POLITICS (GERMAN) ---
+https://www.spiegel.de
+https://www.zeit.de
+https://www.tagesschau.de
+https://www.n-tv.de
+https://www.welt.de
+https://www.faz.net
+https://www.sueddeutsche.de
+https://www.t-online.de
+https://www.focus.de
+https://www.handelsblatt.com
+
+# --- NEWS & POLITICS (ENGLISH) ---
+https://www.bbc.com/news
+https://www.theguardian.com/international
+https://www.nytimes.com
+https://www.reuters.com
+https://www.aljazeera.com
+https://www.bloomberg.com
+https://www.washingtonpost.com
+https://www.economist.com
+https://www.dw.com/en/top-stories/s-9097
+https://www.euronews.com
+
+# --- NEWS & POLITICS (FRENCH) ---
+https://www.lemonde.fr
+https://www.lefigaro.fr
+https://www.lexpress.fr
+https://www.liberation.fr
+https://www.france24.com/fr/
+https://www.lepoint.fr
+
+# --- NEWS & POLITICS (SPANISH) ---
+https://elpais.com
+https://www.elmundo.es
+https://www.abc.es
+https://www.lavanguardia.com
+https://www.rtve.es/noticias/
+
+# --- SCIENCE, SPACE & TECH (ENGLISH) ---
+https://www.nasa.gov
+https://www.sciencenews.org
+https://www.nature.com
+https://www.scientificamerican.com
+https://www.sciencedaily.com
+https://www.newscientist.com
+https://www.phys.org
+https://www.space.com
+https://www.wired.com
+https://www.theverge.com
+https://www.techcrunch.com
+
+# --- SCIENCE & TECH (GERMAN) ---
+https://www.wissenschaft.de
+https://www.scinexx.de
+https://www.heise.de
+https://www.golem.de
+https://www.spektrum.de
+https://www.winfuture.de
+https://www.chip.de
+https://www.computerbild.de
+
+# --- RECIPES & COOKING (GERMAN) ---
+https://www.chefkoch.de
+https://www.kochbar.de
+https://www.essen-und-trinken.de
+https://www.brigitte.de/rezepte/
+https://www.lecker.de
+https://www.gutekueche.at
+
+# --- RECIPES & COOKING (ENGLISH) ---
+https://www.allrecipes.com
+https://www.seriouseats.com
+https://www.bonappetit.com
+https://www.epicurious.com
+https://www.foodnetwork.com
+https://www.simplyrecipes.com
+https://www.thekitchn.com
+
+# --- RECIPES & COOKING (FRENCH/SPANISH) ---
+https://www.marmiton.org
+https://www.cuisineaz.com
+https://www.directoalpaladar.com
+https://www.recetasderechupete.com
+
+# --- HISTORY & CULTURE ---
+https://www.history.com
+https://www.nationalgeographic.com
+https://www.smithsonianmag.com
+https://www.unesco.org
+https://www.britannica.com
+https://www.ancient.eu
+https://www.historytoday.com
+https://www.geo.de/geographie/archaeologie
+https://www.damals.de
+
+# --- TRAVEL & GEOGRAPHY ---
+https://www.lonelyplanet.com
+https://www.tripadvisor.com
+https://www.nomadicmatt.com
+https://www.cntraveler.com
+https://www.roughguides.com
+https://www.travelandleisure.com
+https://www.fodor.com
+https://www.urlaubsguru.de
+https://www.urlaubspiraten.de
+
+# --- SPORTS & FITNESS ---
+https://www.kicker.de
+https://www.sport1.de
+https://www.espn.com
+https://www.sportsillustrated.com
+https://www.bbc.com/sport
+https://www.marca.com
+https://www.lequipe.fr
+https://www.runnersworld.com
+
+# --- LIFESTYLE, HEALTH & WELLNESS ---
+https://www.healthline.com
+https://www.webmd.com
+https://www.mayoclinic.org
+https://www.vogue.com
+https://www.gq.com
+https://www.menshealth.com
+https://www.womenshealthmag.com
+https://www.psychologytoday.com
+
+# --- KNOWLEDGE & REFERENCE ---
+https://de.wikipedia.org/wiki/Wikipedia:Hauptseite
+https://en.wikipedia.org/wiki/Main_Page
+https://fr.wikipedia.org/wiki/Wikip%C3%A9dia:Accueil_principal
+https://es.wikipedia.org/wiki/Wikipedia:Portada
+https://it.wikipedia.org/wiki/Pagina_principale
+https://nl.wikipedia.org/wiki/Hoofdpagina
+https://www.wikidata.org/wiki/Wikidata:Main_Page
+https://arxiv.org/list/physics/new
+https://theconversation.com
+
+# --- ENVIRONMENT & NATURE ---
+https://www.worldwildlife.org
+https://www.greenpeace.org/international/
+https://www.enn.com
+https://www.treehugger.com
+https://www.ecowatch.com
+https://www.nationalgeographic.de/natur
