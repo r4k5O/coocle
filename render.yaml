@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: coocle
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/stats
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: USE_ASTRA
+        value: "false"
+      - key: COOCLE_PREWARM_ASTRA
+        value: "0"
+      - key: COOCLE_START_CRAWLER
+        value: "0"
