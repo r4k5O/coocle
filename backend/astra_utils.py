@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+from functools import lru_cache
 
 
 logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=1)
 def get_astra_collection():
     """
     Connects to AstraDB and returns the collection object.
@@ -60,3 +62,7 @@ def get_astra_collection():
 
 def is_astra_enabled() -> bool:
     return os.environ.get("USE_ASTRA", "false").lower() == "true"
+
+
+def reset_astra_cache() -> None:
+    get_astra_collection.cache_clear()

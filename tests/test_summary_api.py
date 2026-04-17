@@ -319,3 +319,39 @@ class SummaryApiTests(unittest.TestCase):
         )
         vec_search_mock.assert_awaited_once()
         fts_search_mock.assert_called_once()
+
+    def test_pages_overview_returns_index_queue_and_astra_status(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO crawl_queue (url, depth, discovered_at, last_error)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("https://example.com/queued", 2, "2026-04-17T10:00:00", None),
+        )
+        self.conn.commit()
+        self.main_module.app.state.crawl_status = {
+            "state": "fetching",
+            "current_url": "https://example.com/live",
+            "current_depth": 1,
+            "message": "Seite wird gecrawlt",
+            "updated_at": "2026-04-17T10:05:00",
+        }
+
+        with patch.object(self.main_module.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+            self.main_module.astra_utils,
+            "get_astra_collection",
+            return_value=type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})(),
+        ):
+            response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["indexed_count"], 1)
+        self.assertEqual(payload["summary"]["queued_count"], 1)
+        self.assertEqual(payload["summary"]["active_scans"], 1)
+        self.assertTrue(payload["astra"]["enabled"])
+        self.assertTrue(payload["astra"]["connected"])
+        self.assertEqual(payload["astra"]["collection"], "testspace.coocle_pages")
+        self.assertEqual(payload["indexed_pages"][0]["url"], "https://example.com/python")
+        self.assertEqual(payload["queued_pages"][0]["url"], "https://example.com/queued")
+        self.assertEqual(payload["current_scans"][0]["url"], "https://example.com/live")

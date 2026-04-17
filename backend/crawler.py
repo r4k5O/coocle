@@ -6,7 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Awaitable, Callable, Iterable
 from urllib.parse import urljoin, urldefrag, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -145,6 +145,7 @@ async def crawl_loop(
     cfg: CrawlConfig,
     stop_event: asyncio.Event,
     run_forever: bool = False,
+    status_hook: Callable[[dict], Awaitable[None] | None] | None = None,
 ) -> None:
     # Lazy import to avoid circulars
     import sqlite3
@@ -181,8 +182,26 @@ async def crawl_loop(
         pages_saved = 0
         skipped = 0
         errors = 0
+
+        async def publish_status(**payload) -> None:
+            if status_hook is None:
+                return
+            result = status_hook(payload)
+            if asyncio.iscoroutine(result):
+                await result
+
         while not stop_event.is_set():
             if cfg.max_pages > 0 and pages_done >= cfg.max_pages:
+                await publish_status(
+                    state="idle",
+                    current_url=None,
+                    current_depth=None,
+                    message=f"Max pages erreicht ({cfg.max_pages})",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 _log.info("Reached max_pages (%d). Stopping.", cfg.max_pages)
                 break
 
@@ -190,6 +209,16 @@ async def crawl_loop(
                 "SELECT url, depth FROM crawl_queue ORDER BY discovered_at LIMIT 1"
             ).fetchone()
             if not row:
+                await publish_status(
+                    state="idle",
+                    current_url=None,
+                    current_depth=None,
+                    message="Warteschlange leer",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 if run_forever:
                     await asyncio.sleep(0.5)
                     continue
@@ -206,18 +235,58 @@ async def crawl_loop(
             depth = int(row["depth"])
             conn.execute("DELETE FROM crawl_queue WHERE url = ?", (url,))
             conn.commit()
+            await publish_status(
+                state="fetching",
+                current_url=url,
+                current_depth=depth,
+                message="Seite wird gecrawlt",
+                pages_done=pages_done,
+                pages_saved=pages_saved,
+                skipped=skipped,
+                errors=errors,
+            )
 
             if depth > cfg.max_depth:
                 skipped += 1
+                await publish_status(
+                    state="skipped",
+                    current_url=url,
+                    current_depth=depth,
+                    message="Maximale Tiefe ueberschritten",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 continue
 
             if cfg.same_host_only and not any(_same_host(url, s) for s in seeds_norm):
                 skipped += 1
+                await publish_status(
+                    state="skipped",
+                    current_url=url,
+                    current_depth=depth,
+                    message="Anderer Host als Seed",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 continue
 
             try:
                 if not await robots.allowed(client, url, cfg.user_agent):
                     skipped += 1
+                    await publish_status(
+                        state="skipped",
+                        current_url=url,
+                        current_depth=depth,
+                        message="robots.txt blockiert den Abruf",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
                     continue
 
                 r = await client.get(
@@ -228,10 +297,30 @@ async def crawl_loop(
                 ct = (r.headers.get("content-type") or "").lower()
                 if r.status_code >= 400:
                     skipped += 1
+                    await publish_status(
+                        state="skipped",
+                        current_url=url,
+                        current_depth=depth,
+                        message=f"HTTP {r.status_code}",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
                     _log.debug("Skip HTTP %s %s", r.status_code, url)
                     continue
                 if "text/html" not in ct and "application/xhtml+xml" not in ct:
                     skipped += 1
+                    await publish_status(
+                        state="skipped",
+                        current_url=url,
+                        current_depth=depth,
+                        message="Nicht-HTML Inhalt uebersprungen",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
                     _log.debug("Skip non-HTML (%s) %s", ct[:60], url)
                     continue
 
@@ -327,6 +416,16 @@ async def crawl_loop(
                 conn.commit()
                 pages_done += 1
                 pages_saved += 1
+                await publish_status(
+                    state="saved",
+                    current_url=url,
+                    current_depth=depth,
+                    message="Seite indexiert",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 _log.info("Saved (%d/%d) depth=%d %s", pages_done, cfg.max_pages, depth, url)
 
                 if depth < cfg.max_depth:
@@ -336,13 +435,32 @@ async def crawl_loop(
 
             except (httpx.HTTPError, sqlite3.Error, UnicodeError):
                 errors += 1
+                await publish_status(
+                    state="error",
+                    current_url=url,
+                    current_depth=depth,
+                    message="Fetch- oder Speicherfehler",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 _log.debug("Fetch/store error for %s", url, exc_info=True)
             except Exception:
                 errors += 1
+                await publish_status(
+                    state="error",
+                    current_url=url,
+                    current_depth=depth,
+                    message="Unerwarteter Crawl-Fehler",
+                    pages_done=pages_done,
+                    pages_saved=pages_saved,
+                    skipped=skipped,
+                    errors=errors,
+                )
                 _log.debug("Unexpected error for %s", url, exc_info=True)
 
             # Respect robots.txt Crawl-delay if present, else use config delay.
             robots_delay = robots.get_delay(url, cfg.user_agent)
             wait_s = max(cfg.delay_s, robots_delay or 0)
             await asyncio.sleep(wait_s)
-

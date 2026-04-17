@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coocle Pages</title>
+    <style>
+      :root {
+        --bg: #f4fbff;
+        --surface: #ffffff;
+        --border: #d8e8f1;
+        --text: #163040;
+        --muted: #5e7484;
+        --link: #0c5fd7;
+        --ok: #18755a;
+        --warn: #c57b12;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, #f7fcff 0%, #eef8fd 100%);
+      }
+      .shell {
+        width: min(1180px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 24px 0 40px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+      }
+      .brand img {
+        width: 38px;
+        height: 38px;
+      }
+      .brand strong {
+        display: block;
+        font-size: 1.05rem;
+      }
+      .brand span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .backlink {
+        color: var(--link);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 3.1rem);
+      }
+      .lead {
+        margin: 10px 0 0;
+        color: var(--muted);
+        max-width: 60rem;
+        line-height: 1.6;
+      }
+      .summaryGrid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin: 24px 0;
+      }
+      .card, .summaryCard {
+        background: rgba(255,255,255,0.88);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 6px 22px rgba(18, 74, 110, 0.08);
+      }
+      .summaryCard {
+        padding: 18px;
+      }
+      .summaryLabel {
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 8px;
+      }
+      .summaryValue {
+        font-size: 1.7rem;
+        font-weight: 800;
+      }
+      .summaryMeta {
+        color: var(--muted);
+        font-size: 0.86rem;
+        margin-top: 6px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 18px;
+      }
+      .stack {
+        display: grid;
+        gap: 18px;
+      }
+      .sectionHeader {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 18px 0;
+      }
+      .sectionHeader h2 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+      .sectionHeader span {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+      .list {
+        list-style: none;
+        margin: 0;
+        padding: 16px 18px 18px;
+        display: grid;
+        gap: 12px;
+      }
+      .item {
+        padding: 14px;
+        border-radius: 14px;
+        background: #f8fcff;
+        border: 1px solid #e6f1f7;
+      }
+      .itemTop {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: start;
+      }
+      .itemTitle {
+        color: var(--link);
+        text-decoration: none;
+        font-weight: 700;
+        word-break: break-word;
+      }
+      .itemMeta {
+        color: var(--muted);
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .itemExcerpt {
+        margin-top: 8px;
+        color: var(--text);
+        line-height: 1.55;
+        font-size: 0.93rem;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        background: #e8f6ff;
+        color: #15608d;
+      }
+      .pill.ok { background: #eaf8ef; color: var(--ok); }
+      .pill.warn { background: #fff5df; color: var(--warn); }
+      .note {
+        padding: 18px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 18px;
+      }
+      @media (max-width: 900px) {
+        .summaryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .layout { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 560px) {
+        .summaryGrid { grid-template-columns: 1fr; }
+        .topbar { flex-direction: column; align-items: flex-start; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <a class="brand" href="/">
+          <img src="/coocle_logo.png" alt="" />
+          <div>
+            <strong>Coocle Pages</strong>
+            <span>Archiv, Queue und Scan-Transparenz</span>
+          </div>
+        </a>
+        <a class="backlink" href="/">Zur Suche</a>
+      </div>
+
+      <h1>Einblicke in den Index</h1>
+      <p class="lead">
+        Diese Seite zeigt, was Coocle bereits indexiert hat, was gerade gescannt wird und welche URLs noch
+        in der Warteschlange stehen. Wenn AstraDB aktiv ist, wird auch der Cloud-Vektorstatus angezeigt.
+      </p>
+
+      <div class="summaryGrid" id="summaryGrid"></div>
+
+      <div class="layout">
+        <div class="stack">
+          <section class="card">
+            <div class="sectionHeader">
+              <h2>Indexierte Seiten</h2>
+              <span id="indexedCountLabel"></span>
+            </div>
+            <ol class="list" id="indexedList"></ol>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="card">
+            <div class="sectionHeader">
+              <h2>Aktuell gescannte Seiten</h2>
+              <span id="currentCountLabel"></span>
+            </div>
+            <div id="currentList"></div>
+          </section>
+
+          <section class="card">
+            <div class="sectionHeader">
+              <h2>Warteschlange</h2>
+              <span id="queueCountLabel"></span>
+            </div>
+            <ol class="list" id="queueList"></ol>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function renderSummaryCard(label, value, meta = "") {
+        return `
+          <div class="summaryCard">
+            <div class="summaryLabel">${escapeHtml(label)}</div>
+            <div class="summaryValue">${escapeHtml(value)}</div>
+            <div class="summaryMeta">${escapeHtml(meta)}</div>
+          </div>
+        `;
+      }
+
+      function renderIndexedItem(item) {
+        return `
+          <li class="item">
+            <div class="itemTop">
+              <div>
+                <a class="itemTitle" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>
+              </div>
+              <div class="itemMeta">${escapeHtml(item.fetched_at || "ohne Datum")}</div>
+            </div>
+            <div class="itemExcerpt">${escapeHtml(item.excerpt || "Kein Auszug vorhanden.")}</div>
+            <div class="itemMeta" style="margin-top:8px;">
+              ${escapeHtml(item.content_type || "unbekannter Typ")} · Status ${escapeHtml(item.status_code ?? "n/a")} · ${escapeHtml(item.language || "sprache unbekannt")}
+            </div>
+          </li>
+        `;
+      }
+
+      function renderQueueItem(item) {
+        const errorLine = item.last_error ? `<div class="itemMeta" style="margin-top:6px;">Fehler: ${escapeHtml(item.last_error)}</div>` : "";
+        return `
+          <li class="item">
+            <div class="itemTop">
+              <a class="itemTitle" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.url)}</a>
+              <div class="itemMeta">Tiefe ${escapeHtml(item.depth ?? "?" )}</div>
+            </div>
+            <div class="itemMeta" style="margin-top:8px;">Entdeckt: ${escapeHtml(item.discovered_at || "unbekannt")}</div>
+            ${errorLine}
+          </li>
+        `;
+      }
+
+      function renderCurrentScan(item) {
+        const stateClass = item.state === "saved" ? "ok" : item.state === "error" ? "warn" : "";
+        return `
+          <div class="note">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="pill ${stateClass}">${escapeHtml(item.state || "aktiv")}</span>
+              <span>${escapeHtml(item.message || "Crawler aktiv")}</span>
+            </div>
+            <div style="margin-top:10px;"><a class="itemTitle" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.url)}</a></div>
+            <div class="itemMeta" style="margin-top:8px;">Tiefe ${escapeHtml(item.depth ?? "?")} · Update ${escapeHtml(item.updated_at || "unbekannt")}</div>
+          </div>
+        `;
+      }
+
+      async function loadOverview() {
+        const res = await fetch("/api/pages/overview");
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+
+        document.getElementById("summaryGrid").innerHTML = [
+          renderSummaryCard("Indexierte Seiten", data.summary.indexed_count, "Archivierte HTML-Seiten"),
+          renderSummaryCard("Warteschlange", data.summary.queued_count, "Noch zu crawlende URLs"),
+          renderSummaryCard("Aktive Scans", data.summary.active_scans, data.crawler_status?.message || "Crawlerstatus"),
+          renderSummaryCard(
+            "AstraDB",
+            data.astra?.connected ? "Verbunden" : data.astra?.enabled ? "Aktiv, aber offline" : "Deaktiviert",
+            data.astra?.collection || "keine Collection"
+          ),
+        ].join("");
+
+        document.getElementById("indexedCountLabel").textContent = `${data.indexed_pages.length} Einträge sichtbar`;
+        document.getElementById("queueCountLabel").textContent = `${data.queued_pages.length} Einträge sichtbar`;
+        document.getElementById("currentCountLabel").textContent = `${data.current_scans.length} aktiv`;
+
+        document.getElementById("indexedList").innerHTML = data.indexed_pages.length
+          ? data.indexed_pages.map(renderIndexedItem).join("")
+          : `<div class="empty">Noch keine indexierten Seiten vorhanden.</div>`;
+
+        document.getElementById("queueList").innerHTML = data.queued_pages.length
+          ? data.queued_pages.map(renderQueueItem).join("")
+          : `<div class="empty">Die Warteschlange ist aktuell leer.</div>`;
+
+        document.getElementById("currentList").innerHTML = data.current_scans.length
+          ? data.current_scans.map(renderCurrentScan).join("")
+          : `<div class="empty">Gerade wird nichts aktiv gescannt.</div>`;
+      }
+
+      loadOverview().catch((err) => {
+        document.getElementById("summaryGrid").innerHTML = renderSummaryCard("Fehler", "Pages API nicht erreichbar", err.message);
+      });
+      setInterval(() => loadOverview().catch(() => {}), 5000);
+    </script>
+  </body>
+</html>

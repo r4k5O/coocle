@@ -186,18 +186,44 @@ def _enrich_results_for_summary(conn, results: list[dict], limit: int = SUMMARY_
     return enriched
 
 
+def _excerpt(text: str | None, limit: int = 220) -> str:
+    value = " ".join(str(text or "").split())
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(1, limit - 1)].rstrip()}…"
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
+    astra_utils.reset_astra_cache()
     fastapi_app.state.conn = dbmod.connect(_db_path())
     dbmod.init_db(fastapi_app.state.conn)
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
     )
+    fastapi_app.state.crawl_status = {
+        "state": "idle",
+        "current_url": None,
+        "current_depth": None,
+        "message": "Crawler inaktiv",
+        "pages_done": 0,
+        "pages_saved": 0,
+        "skipped": 0,
+        "errors": 0,
+        "updated_at": datetime.now().isoformat(),
+    }
     fastapi_app.state.stop_event = asyncio.Event()
     fastapi_app.state.crawler_task = None
 
     try:
+        async def set_crawl_status(payload: dict) -> None:
+            fastapi_app.state.crawl_status = {
+                **fastapi_app.state.crawl_status,
+                **payload,
+                "updated_at": datetime.now().isoformat(),
+            }
+
         if astra_utils.is_astra_enabled() and _truthy_env("COOCLE_PREWARM_ASTRA", default=False):
             try:
                 await asyncio.to_thread(astra_utils.get_astra_collection)
@@ -228,6 +254,7 @@ async def lifespan(fastapi_app: FastAPI):
                         cfg=cfg,
                         stop_event=fastapi_app.state.stop_event,
                         run_forever=True,
+                        status_hook=set_crawl_status,
                     )
                 )
 
@@ -395,6 +422,166 @@ def api_stats(request: Request):
     pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
     queued = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
     return {"pages": pages, "queued": queued, "db": str(_db_path())}
+
+
+@app.get("/api/pages/overview")
+def api_pages_overview(
+    request: Request,
+    indexed_limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    queue_limit: Annotated[int, Query(ge=1, le=50)] = 20,
+):
+    conn = _conn_from_request(request)
+    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
+    queued_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
+
+    indexed_rows = conn.execute(
+        """
+        SELECT url, title, content, fetched_at, status_code, content_type, language
+        FROM pages
+        ORDER BY datetime(COALESCE(fetched_at, '1970-01-01T00:00:00')) DESC, id DESC
+        LIMIT ?
+        """,
+        (indexed_limit,),
+    ).fetchall()
+    queue_rows = conn.execute(
+        """
+        SELECT url, depth, discovered_at, last_error
+        FROM crawl_queue
+        ORDER BY datetime(COALESCE(discovered_at, '1970-01-01T00:00:00')) ASC, url ASC
+        LIMIT ?
+        """,
+        (queue_limit,),
+    ).fetchall()
+
+    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
+    current_scans = []
+    current_url = crawl_status.get("current_url")
+    if current_url:
+        current_scans.append(
+            {
+                "url": current_url,
+                "depth": crawl_status.get("current_depth"),
+                "state": crawl_status.get("state"),
+                "message": crawl_status.get("message"),
+                "updated_at": crawl_status.get("updated_at"),
+            }
+        )
+
+    astra_collection = astra_utils.get_astra_collection() if astra_utils.is_astra_enabled() else None
+    astra_status = {
+        "enabled": astra_utils.is_astra_enabled(),
+        "connected": bool(astra_collection),
+        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
+    }
+
+    return {
+        "summary": {
+            "indexed_count": indexed_count,
+            "queued_count": queued_count,
+            "active_scans": len(current_scans),
+        },
+        "astra": astra_status,
+        "crawler_status": crawl_status,
+        "current_scans": current_scans,
+        "indexed_pages": [
+            {
+                "url": row["url"],
+                "title": row["title"] or row["url"],
+                "excerpt": _excerpt(row["content"]),
+                "fetched_at": row["fetched_at"],
+                "status_code": row["status_code"],
+                "content_type": row["content_type"],
+                "language": row["language"],
+            }
+            for row in indexed_rows
+        ],
+        "queued_pages": [
+            {
+                "url": row["url"],
+                "depth": row["depth"],
+                "discovered_at": row["discovered_at"],
+                "last_error": row["last_error"],
+            }
+            for row in queue_rows
+        ],
+    }
+
+
+@app.get("/api/pages/overview")
+def api_pages_overview(
+    request: Request,
+    indexed_limit: Annotated[int, Query(ge=1, le=50)] = 24,
+    queue_limit: Annotated[int, Query(ge=1, le=50)] = 24,
+):
+    conn = _conn_from_request(request)
+    indexed_rows = conn.execute(
+        """
+        SELECT url, title, content, fetched_at, status_code, content_type, language
+        FROM pages
+        ORDER BY datetime(COALESCE(fetched_at, '1970-01-01T00:00:00')) DESC, id DESC
+        LIMIT ?
+        """,
+        (indexed_limit,),
+    ).fetchall()
+    queue_rows = conn.execute(
+        """
+        SELECT url, depth, discovered_at, last_error
+        FROM crawl_queue
+        ORDER BY datetime(COALESCE(discovered_at, '1970-01-01T00:00:00')) ASC, url ASC
+        LIMIT ?
+        """,
+        (queue_limit,),
+    ).fetchall()
+
+    indexed_pages = [
+        {
+            "url": row["url"],
+            "title": row["title"] or row["url"],
+            "excerpt": _excerpt(row["content"]),
+            "fetched_at": row["fetched_at"],
+            "status_code": row["status_code"],
+            "content_type": row["content_type"],
+            "language": row["language"],
+        }
+        for row in indexed_rows
+    ]
+    queued_pages = [
+        {
+            "url": row["url"],
+            "depth": row["depth"],
+            "discovered_at": row["discovered_at"],
+            "last_error": row["last_error"],
+        }
+        for row in queue_rows
+    ]
+
+    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
+    current_scans = []
+    if crawl_status.get("current_url"):
+        current_scans.append(
+            {
+                "url": crawl_status.get("current_url"),
+                "depth": crawl_status.get("current_depth"),
+                "state": crawl_status.get("state"),
+                "message": crawl_status.get("message"),
+                "updated_at": crawl_status.get("updated_at"),
+            }
+        )
+
+    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
+    queued_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
+
+    return {
+        "summary": {
+            "indexed_count": indexed_count,
+            "queued_count": queued_count,
+            "active_scans": len(current_scans),
+        },
+        "current_scans": current_scans,
+        "indexed_pages": indexed_pages,
+        "queued_pages": queued_pages,
+        "crawler_status": crawl_status,
+    }
 
 
 # Serve the existing static frontend from repo root.
