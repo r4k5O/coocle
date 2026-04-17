@@ -4,9 +4,13 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
+from collections import deque
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
 import httpx
 from datetime import datetime
@@ -14,8 +18,8 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load variables from .env if it exists
 
-from fastapi import FastAPI, Header, Query, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db as dbmod
@@ -30,6 +34,28 @@ ROOT = Path(__file__).resolve().parents[1]
 FREE_SUMMARY_LIMIT = 10
 logger = logging.getLogger(__name__)
 SUMMARY_CONTEXT_LIMIT = 5
+
+
+class SlidingWindowRateLimiter:
+    def __init__(self) -> None:
+        self._events: dict[tuple[str, str], deque[float]] = {}
+        self._lock = asyncio.Lock()
+
+    async def allow(self, bucket: str, key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+        now = time.monotonic()
+        cutoff = now - window_seconds
+
+        async with self._lock:
+            events = self._events.setdefault((bucket, key), deque())
+            while events and events[0] <= cutoff:
+                events.popleft()
+
+            if len(events) >= limit:
+                retry_after = max(1, int(events[0] + window_seconds - now))
+                return False, retry_after
+
+            events.append(now)
+            return True, 0
 
 
 def _db_path() -> str:
@@ -56,6 +82,72 @@ def _request_ip(request: Request) -> str:
         if real_ip:
             return real_ip
     return request.client.host if request.client else "unknown"
+
+
+def _is_local_client_ip(ip: str) -> bool:
+    try:
+        parsed = ip_address(ip)
+    except ValueError:
+        return ip in {"localhost", "testclient"}
+    return parsed.is_loopback
+
+
+def _int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return max(1, int(value))
+    except ValueError:
+        logger.warning("Invalid integer env %s=%r; using default %s", name, value, default)
+        return default
+
+
+def _security_headers(response) -> None:
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _validate_custom_ollama_host(host: str | None, request: Request) -> str | None:
+    if not host:
+        return None
+
+    candidate = host.strip()
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="X-Ollama-Host muss mit http:// oder https:// beginnen.")
+    if not parsed.netloc:
+        raise HTTPException(status_code=400, detail="X-Ollama-Host ist ungueltig.")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="X-Ollama-Host darf keine Zugangsdaten enthalten.")
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        raise HTTPException(status_code=400, detail="X-Ollama-Host ist ungueltig.")
+
+    allow_private = _truthy_env("COOCLE_ALLOW_PRIVATE_OLLAMA_HOSTS", default=False)
+    if parsed.scheme != "https" and not allow_private:
+        if not (hostname in {"localhost", "127.0.0.1", "::1"} and _is_local_client_ip(_request_ip(request))):
+            raise HTTPException(
+                status_code=400,
+                detail="Externe X-Ollama-Hosts muessen HTTPS verwenden. Fuer lokale Hosts ist ein lokaler Request erforderlich.",
+            )
+
+    try:
+        parsed_ip = ip_address(hostname)
+    except ValueError:
+        return candidate
+
+    if parsed_ip.is_private or parsed_ip.is_link_local or parsed_ip.is_reserved or parsed_ip.is_multicast:
+        if not allow_private and not (parsed_ip.is_loopback and _is_local_client_ip(_request_ip(request))):
+            raise HTTPException(
+                status_code=400,
+                detail="Private oder interne X-Ollama-Hosts sind deaktiviert.",
+            )
+
+    return candidate
 
 
 def _usage_count(conn, ip: str, day: str) -> int:
@@ -98,6 +190,10 @@ def _enrich_results_for_summary(conn, results: list[dict], limit: int = SUMMARY_
 async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.conn = dbmod.connect(_db_path())
     dbmod.init_db(fastapi_app.state.conn)
+    fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
+    fastapi_app.state.summary_semaphore = asyncio.Semaphore(
+        _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
+    )
     fastapi_app.state.stop_event = asyncio.Event()
     fastapi_app.state.crawler_task = None
 
@@ -155,6 +251,48 @@ async def lifespan(fastapi_app: FastAPI):
 app = FastAPI(title="Coocle", version="0.1.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def protect_api(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        limiter = request.app.state.rate_limiter
+        ip = _request_ip(request)
+
+        general_ok, general_retry = await limiter.allow(
+            "api-general",
+            ip,
+            _int_env("COOCLE_API_RATE_LIMIT", 60),
+            _int_env("COOCLE_API_RATE_WINDOW_S", 60),
+        )
+        if not general_ok:
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "Zu viele API-Anfragen. Bitte kurz warten."},
+            )
+            response.headers["Retry-After"] = str(general_retry)
+            _security_headers(response)
+            return response
+
+        if request.url.path == "/api/search" and request.query_params.get("summarize", "").lower() in {"1", "true", "yes"}:
+            summary_ok, summary_retry = await limiter.allow(
+                "api-summary",
+                ip,
+                _int_env("COOCLE_SUMMARY_RATE_LIMIT", 6),
+                _int_env("COOCLE_SUMMARY_RATE_WINDOW_S", 60),
+            )
+            if not summary_ok:
+                response = JSONResponse(
+                    status_code=429,
+                    content={"detail": "Zu viele Zusammenfassungs-Anfragen. Bitte kurz warten."},
+                )
+                response.headers["Retry-After"] = str(summary_retry)
+                _security_headers(response)
+                return response
+
+    response = await call_next(request)
+    _security_headers(response)
+    return response
+
+
 @app.get("/api/search")
 async def api_search(
     request: Request,
@@ -168,6 +306,7 @@ async def api_search(
     conn = _conn_from_request(request)
     ip = _request_ip(request)
     day = datetime.now().strftime("%Y-%m-%d")
+    validated_ollama_host = _validate_custom_ollama_host(x_ollama_host, request)
 
     if mode == "vector":
         results = await vec_search(conn, q, limit=limit)
@@ -212,15 +351,16 @@ async def api_search(
             if x_ollama_key:
                 default_cfg = env_chat_config()
                 chat_cfg = OllamaChatConfig(
-                    host=x_ollama_host or "https://ollama.com/api",
+                    host=validated_ollama_host or "https://ollama.com/api",
                     model=default_cfg.model,
                     api_key=x_ollama_key,
                     timeout_s=default_cfg.timeout_s,
                 )
 
             summary_inputs = _enrich_results_for_summary(conn, results)
-            async with httpx.AsyncClient() as client:
-                summary_result = await summarize_results(client, q, summary_inputs, cfg=chat_cfg)
+            async with request.app.state.summary_semaphore:
+                async with httpx.AsyncClient() as client:
+                    summary_result = await summarize_results(client, q, summary_inputs, cfg=chat_cfg)
 
             if summary_result.status == "ok" and summary_result.summary and not x_ollama_key:
                 _increment_usage(conn, ip, day)
@@ -269,4 +409,3 @@ async def favicon():
 @app.get("/")
 def root_index():
     return FileResponse(str(ROOT / "index.html"))
-

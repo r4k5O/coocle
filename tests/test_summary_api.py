@@ -18,10 +18,18 @@ class SummaryApiTests(unittest.TestCase):
         self.prev_use_astra = os.environ.get("USE_ASTRA")
         self.prev_start_crawler = os.environ.get("COOCLE_START_CRAWLER")
         self.prev_prewarm_astra = os.environ.get("COOCLE_PREWARM_ASTRA")
+        self.prev_api_rate_limit = os.environ.get("COOCLE_API_RATE_LIMIT")
+        self.prev_api_rate_window = os.environ.get("COOCLE_API_RATE_WINDOW_S")
+        self.prev_summary_rate_limit = os.environ.get("COOCLE_SUMMARY_RATE_LIMIT")
+        self.prev_summary_rate_window = os.environ.get("COOCLE_SUMMARY_RATE_WINDOW_S")
         os.environ["COOCLE_DB"] = str(self.test_db)
         os.environ["USE_ASTRA"] = "false"
         os.environ["COOCLE_START_CRAWLER"] = "0"
         os.environ["COOCLE_PREWARM_ASTRA"] = "0"
+        os.environ["COOCLE_API_RATE_LIMIT"] = "100"
+        os.environ["COOCLE_API_RATE_WINDOW_S"] = "60"
+        os.environ["COOCLE_SUMMARY_RATE_LIMIT"] = "10"
+        os.environ["COOCLE_SUMMARY_RATE_WINDOW_S"] = "60"
 
         from backend import main as imported_main
 
@@ -64,6 +72,22 @@ class SummaryApiTests(unittest.TestCase):
             os.environ.pop("COOCLE_PREWARM_ASTRA", None)
         else:
             os.environ["COOCLE_PREWARM_ASTRA"] = self.prev_prewarm_astra
+        if self.prev_api_rate_limit is None:
+            os.environ.pop("COOCLE_API_RATE_LIMIT", None)
+        else:
+            os.environ["COOCLE_API_RATE_LIMIT"] = self.prev_api_rate_limit
+        if self.prev_api_rate_window is None:
+            os.environ.pop("COOCLE_API_RATE_WINDOW_S", None)
+        else:
+            os.environ["COOCLE_API_RATE_WINDOW_S"] = self.prev_api_rate_window
+        if self.prev_summary_rate_limit is None:
+            os.environ.pop("COOCLE_SUMMARY_RATE_LIMIT", None)
+        else:
+            os.environ["COOCLE_SUMMARY_RATE_LIMIT"] = self.prev_summary_rate_limit
+        if self.prev_summary_rate_window is None:
+            os.environ.pop("COOCLE_SUMMARY_RATE_WINDOW_S", None)
+        else:
+            os.environ["COOCLE_SUMMARY_RATE_WINDOW_S"] = self.prev_summary_rate_window
 
     def _today(self) -> str:
         return datetime.now().strftime("%Y-%m-%d")
@@ -181,3 +205,33 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(payload["summary_status"], "unavailable")
         self.assertEqual(payload["summary_message"], "Keine Suchergebnisse zum Zusammenfassen.")
         self.assertIsNone(payload["summary_format"])
+
+    def test_custom_ollama_host_requires_https_for_non_local_clients(self) -> None:
+        response = self.client.get(
+            "/api/search",
+            params={"q": "python", "summarize": "true"},
+            headers={
+                "X-Ollama-Key": "ollama_test_key",
+                "X-Ollama-Host": "http://example.com/v1",
+                "X-Forwarded-For": "203.0.113.10",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("HTTPS", response.json()["detail"])
+
+    def test_summary_requests_are_rate_limited(self) -> None:
+        self.main_module.app.state.rate_limiter._events.clear()
+        os.environ["COOCLE_SUMMARY_RATE_LIMIT"] = "1"
+
+        with patch.object(
+            self.main_module,
+            "summarize_results",
+            AsyncMock(return_value=SummaryResult(summary="Kurzfassung", status="ok")),
+        ):
+            first = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            second = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertIn("Retry-After", second.headers)

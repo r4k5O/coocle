@@ -90,6 +90,22 @@ Bei `GET /api/search?q=<query>&summarize=true` liefert das Backend zusätzlich:
 - `credits_exhausted`
 - `error`
 
+## API-Schutz
+
+Das Backend hat jetzt zusaetzliche Schutzmechanismen fuer API-Aufrufe:
+
+- Sliding-Window Rate-Limits pro IP auf `/api/*`
+- strengere Limits fuer teure `summarize=true`-Requests
+- Begrenzung paralleler Summary-Jobs auf dem Server
+- Validierung von benutzerdefinierten `X-Ollama-Host`-Werten, damit keine unsicheren internen Ziele angesprochen werden
+
+Wichtige Umgebungsvariablen:
+
+- `COOCLE_API_RATE_LIMIT` und `COOCLE_API_RATE_WINDOW_S`
+- `COOCLE_SUMMARY_RATE_LIMIT` und `COOCLE_SUMMARY_RATE_WINDOW_S`
+- `COOCLE_SUMMARY_CONCURRENCY_LIMIT`
+- `COOCLE_ALLOW_PRIVATE_OLLAMA_HOSTS`
+
 ## Tests
 
 ```powershell
@@ -110,4 +126,3 @@ Vor einer Veröffentlichung solltest du trotzdem noch:
 
 1. Einen passenden Lizenztyp wählen und `LICENSE` ergänzen.
 2. Eventuell bereits verwendete lokale API-Keys rotieren, falls sie jemals geteilt wurden.
-
