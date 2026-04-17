@@ -92,13 +92,19 @@ class SummaryApiTests(unittest.TestCase):
     def _today(self) -> str:
         return datetime.now().strftime("%Y-%m-%d")
 
+    @staticmethod
+    def _search_params(**extra) -> dict[str, str]:
+        params = {"q": "python", "mode": "fts"}
+        params.update(extra)
+        return params
+
     def test_successful_summary_consumes_one_credit(self) -> None:
         with patch.object(
             self.main_module,
             "summarize_results",
             AsyncMock(return_value=SummaryResult(summary="Kurzfassung", status="ok")),
         ) as summarize_mock:
-            response = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            response = self.client.get("/api/search", params=self._search_params(summarize="true"))
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -118,7 +124,7 @@ class SummaryApiTests(unittest.TestCase):
             "summarize_results",
             AsyncMock(return_value=SummaryResult(status="error", message="Host nicht erreichbar")),
         ):
-            response = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            response = self.client.get("/api/search", params=self._search_params(summarize="true"))
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -142,7 +148,7 @@ class SummaryApiTests(unittest.TestCase):
         self.conn.commit()
 
         with patch.object(self.main_module, "summarize_results", AsyncMock()) as summarize_mock:
-            response = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            response = self.client.get("/api/search", params=self._search_params(summarize="true"))
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -160,7 +166,7 @@ class SummaryApiTests(unittest.TestCase):
         ) as summarize_mock:
             response = self.client.get(
                 "/api/search",
-                params={"q": "python", "summarize": "true"},
+                params=self._search_params(summarize="true"),
                 headers={
                     "X-Ollama-Key": "ollama_test_key",
                     "X-Ollama-Host": "https://example.com/v1",
@@ -187,7 +193,7 @@ class SummaryApiTests(unittest.TestCase):
             "summarize_results",
             AsyncMock(return_value=SummaryResult(summary="Kurzfassung", status="ok")),
         ) as summarize_mock:
-            response = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            response = self.client.get("/api/search", params=self._search_params(summarize="true"))
 
         self.assertEqual(response.status_code, 200)
         summary_inputs = summarize_mock.await_args.args[2]
@@ -196,7 +202,7 @@ class SummaryApiTests(unittest.TestCase):
         self.assertIn("Python testing guide", summary_inputs[0]["page_content"])
 
     def test_summarize_without_results_returns_structured_unavailable_state(self) -> None:
-        response = self.client.get("/api/search", params={"q": "rust", "summarize": "true"})
+        response = self.client.get("/api/search", params={"q": "rust", "mode": "fts", "summarize": "true"})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -209,7 +215,7 @@ class SummaryApiTests(unittest.TestCase):
     def test_custom_ollama_host_requires_https_for_non_local_clients(self) -> None:
         response = self.client.get(
             "/api/search",
-            params={"q": "python", "summarize": "true"},
+            params=self._search_params(summarize="true"),
             headers={
                 "X-Ollama-Key": "ollama_test_key",
                 "X-Ollama-Host": "http://example.com/v1",
@@ -229,8 +235,8 @@ class SummaryApiTests(unittest.TestCase):
             "summarize_results",
             AsyncMock(return_value=SummaryResult(summary="Kurzfassung", status="ok")),
         ):
-            first = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
-            second = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+            first = self.client.get("/api/search", params=self._search_params(summarize="true"))
+            second = self.client.get("/api/search", params=self._search_params(summarize="true"))
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
@@ -265,7 +271,7 @@ class SummaryApiTests(unittest.TestCase):
         ) as summarize_mock:
             response = self.client.get(
                 "/api/search",
-                params={"q": "python", "summarize": "true"},
+                params=self._search_params(summarize="true"),
                 headers={
                     "X-Ollama-Key": "ollama_test_key",
                     "X-Ollama-Host": "http://localhost:11434",
