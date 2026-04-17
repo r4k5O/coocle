@@ -156,3 +156,28 @@ class SummaryApiTests(unittest.TestCase):
         cfg = summarize_mock.await_args.kwargs["cfg"]
         self.assertEqual(cfg.host, "https://example.com/v1")
         self.assertEqual(cfg.api_key, "ollama_test_key")
+
+    def test_summary_receives_indexed_page_content_for_tool_context(self) -> None:
+        with patch.object(
+            self.main_module,
+            "summarize_results",
+            AsyncMock(return_value=SummaryResult(summary="Kurzfassung", status="ok")),
+        ) as summarize_mock:
+            response = self.client.get("/api/search", params={"q": "python", "summarize": "true"})
+
+        self.assertEqual(response.status_code, 200)
+        summary_inputs = summarize_mock.await_args.args[2]
+        self.assertTrue(summary_inputs)
+        self.assertIn("page_content", summary_inputs[0])
+        self.assertIn("Python testing guide", summary_inputs[0]["page_content"])
+
+    def test_summarize_without_results_returns_structured_unavailable_state(self) -> None:
+        response = self.client.get("/api/search", params={"q": "rust", "summarize": "true"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"], [])
+        self.assertIsNone(payload["summary"])
+        self.assertEqual(payload["summary_status"], "unavailable")
+        self.assertEqual(payload["summary_message"], "Keine Suchergebnisse zum Zusammenfassen.")
+        self.assertIsNone(payload["summary_format"])

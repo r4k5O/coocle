@@ -74,6 +74,7 @@ Die UI kann Suchergebnisse per `✨ Zusammenfassen` verdichten.
 - lokal über `OLLAMA_HOST`
 - mit eigenem Key/Host über die UI-Einstellungen
 - oder per API mit `X-Ollama-Key` und `X-Ollama-Host`
+- die Zusammenfassung nutzt jetzt neben Snippets auch gespeicherte Seiteninhalte und bei Bedarf einen Live-`webpage_reader` fuer die Top-Ergebnisse
 
 Bei `GET /api/search?q=<query>&summarize=true` liefert das Backend zusätzlich:
 
@@ -94,6 +95,7 @@ Bei `GET /api/search?q=<query>&summarize=true` liefert das Backend zusätzlich:
 ```powershell
 .\.venv\Scripts\python -m unittest discover -s tests -p "test_*.py" -v
 node --check app.js
+node tests/app.test.js
 ```
 
 ## Für GitHub

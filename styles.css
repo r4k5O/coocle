@@ -62,6 +62,7 @@ body {
   padding: 10px 16px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
 }
 
@@ -79,6 +80,7 @@ body {
   align-items: center;
   gap: 8px;
   max-width: 760px;
+  min-width: 0;
 }
 
 .main {
@@ -142,6 +144,7 @@ body {
   padding: 10px 14px;
   background: var(--bg);
   box-shadow: var(--shadow-soft);
+  min-width: 0;
 }
 
 .searchBox:focus-within {
@@ -157,6 +160,7 @@ body {
 
 .queryInput {
   width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -294,6 +298,7 @@ body {
 .resultsMeta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   color: var(--muted);
   font-size: 13px;
@@ -302,6 +307,7 @@ body {
 
 .resultsMeta code {
   font-family: var(--mono);
+  overflow-wrap: anywhere;
 }
 
 .liveToggle {
@@ -536,19 +542,87 @@ kbd {
 }
 
 @media (max-width: 560px) {
+  .main {
+    width: min(var(--max), calc(100% - 20px));
+  }
+
+  .topbar {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .topbarBrand {
+    order: 1;
+  }
+
+  .topbar > .iconBtn {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .topbarSearch {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
   .heroWordmark {
     font-size: 64px;
     margin: 14px 0 18px;
   }
+
+  .hero {
+    width: 100%;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .actionBtn {
+    width: 100%;
+  }
+
+  .topics {
+    align-items: stretch;
+  }
+
+  .topicChips {
+    justify-content: flex-start;
+  }
+
   .metaRow {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .status {
     text-align: left;
   }
+
+  .resultsMeta {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .dot {
+    display: none;
+  }
+
   .topbarSearch {
     max-width: none;
+  }
+
+  .modalContent {
+    width: min(100%, calc(100% - 16px));
+  }
+
+  .modalHeader,
+  .modalBody,
+  .modalFooter {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 

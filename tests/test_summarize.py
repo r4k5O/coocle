@@ -82,3 +82,85 @@ class SummarizeResultsTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.summary, "- Punkt 1\n- Punkt 2")
+
+    async def test_stored_page_content_is_added_as_webpage_reader_context(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            body = json.loads(request.content.decode("utf-8"))
+            prompt = body["messages"][0]["content"]
+            self.assertIn("Tool webpage_reader (stored_page_excerpt) output:", prompt)
+            self.assertIn("Deep Python details from the indexed page", prompt)
+            self.assertIn("Search snippet: Short snippet", prompt)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Stored page summary"}}]})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await summarize_results(
+                client,
+                "python",
+                [
+                    {
+                        "title": "Python Docs",
+                        "url": "https://example.com/python",
+                        "snippet": "Short snippet",
+                        "page_content": "Deep Python details from the indexed page and test-friendly context.",
+                    }
+                ],
+                cfg=OllamaChatConfig(host="https://example.com/v1"),
+            )
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.summary, "Stored page summary")
+
+    async def test_missing_page_content_triggers_live_webpage_reader(self) -> None:
+        requests_seen: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests_seen.append((request.method, str(request.url)))
+            if request.method == "GET":
+                self.assertEqual(str(request.url), "https://docs.example.com/python")
+                return httpx.Response(
+                    200,
+                    headers={"content-type": "text/html; charset=utf-8"},
+                    text="""
+                    <html>
+                      <body>
+                        <main>
+                          <h1>Python Testing</h1>
+                          <p>Read the original webpage for detailed fixtures and assertions.</p>
+                        </main>
+                      </body>
+                    </html>
+                    """,
+                )
+
+            body = json.loads(request.content.decode("utf-8"))
+            prompt = body["messages"][0]["content"]
+            self.assertIn("Tool webpage_reader (live_webpage_reader) output:", prompt)
+            self.assertIn("Python Testing Read the original webpage", prompt)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Live page summary"}}]})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await summarize_results(
+                client,
+                "python",
+                [
+                    {
+                        "title": "Python Docs",
+                        "url": "https://docs.example.com/python",
+                        "snippet": "Reference documentation",
+                    }
+                ],
+                cfg=OllamaChatConfig(host="https://example.com/v1"),
+            )
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.summary, "Live page summary")
+        self.assertEqual(
+            requests_seen,
+            [
+                ("GET", "https://docs.example.com/python"),
+                ("POST", "https://example.com/v1/chat/completions"),
+            ],
+        )

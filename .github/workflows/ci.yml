@@ -42,3 +42,6 @@ jobs:
 
       - name: Check frontend syntax
         run: node --check app.js
+
+      - name: Run frontend unit tests
+        run: node tests/app.test.js

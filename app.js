@@ -1,38 +1,41 @@
 const API_BASE = ""; // e.g. "http://localhost:3000"
 const SEARCH_PATH = "/api/search"; // expects GET ?q=...
+const doc = typeof document !== "undefined" ? document : null;
 
-const topbar = document.getElementById("topbar");
-const home = document.getElementById("home");
-const resultsSection = document.getElementById("results");
+const topbar = doc?.getElementById("topbar");
+const home = doc?.getElementById("home");
+const resultsSection = doc?.getElementById("results");
 
-const form = document.getElementById("searchForm");
-const input = document.getElementById("q");
-const btn = document.getElementById("searchBtn");
-const luckyBtn = document.getElementById("luckyBtn");
-const clearBtn = document.getElementById("clearBtn");
+const form = doc?.getElementById("searchForm");
+const input = doc?.getElementById("q");
+const btn = doc?.getElementById("searchBtn");
+const luckyBtn = doc?.getElementById("luckyBtn");
+const clearBtn = doc?.getElementById("clearBtn");
 
-const formTop = document.getElementById("searchFormTop");
-const inputTop = document.getElementById("qTop");
-const btnTop = document.getElementById("searchBtnTop");
+const formTop = doc?.getElementById("searchFormTop");
+const inputTop = doc?.getElementById("qTop");
+const btnTop = doc?.getElementById("searchBtnTop");
 
-const statusEl = document.getElementById("status");
-const apiLabel = document.getElementById("apiLabel");
-const resultCount = document.getElementById("resultCount");
-const liveToggle = document.getElementById("liveToggle");
-const emptyState = document.getElementById("emptyState");
-const list = document.getElementById("resultsList");
+const statusEl = doc?.getElementById("status");
+const apiLabel = doc?.getElementById("apiLabel");
+const resultCount = doc?.getElementById("resultCount");
+const liveToggle = doc?.getElementById("liveToggle");
+const emptyState = doc?.getElementById("emptyState");
+const list = doc?.getElementById("resultsList");
 
-const settingsBtn = document.getElementById("settingsBtn");
-const settingsModal = document.getElementById("settingsModal");
-const closeSettings = document.getElementById("closeSettings");
-const saveSettingsBtn = document.getElementById("saveSettings");
-const useCustomKey = document.getElementById("useCustomKey");
-const customKeyFields = document.getElementById("customKeyFields");
-const ollamaKeyInput = document.getElementById("ollamaKey");
-const ollamaHostInput = document.getElementById("ollamaHost");
-const creditStatus = document.getElementById("creditStatus");
+const settingsBtn = doc?.getElementById("settingsBtn");
+const settingsModal = doc?.getElementById("settingsModal");
+const closeSettings = doc?.getElementById("closeSettings");
+const saveSettingsBtn = doc?.getElementById("saveSettings");
+const useCustomKey = doc?.getElementById("useCustomKey");
+const customKeyFields = doc?.getElementById("customKeyFields");
+const ollamaKeyInput = doc?.getElementById("ollamaKey");
+const ollamaHostInput = doc?.getElementById("ollamaHost");
+const creditStatus = doc?.getElementById("creditStatus");
 
-apiLabel.textContent = `${API_BASE || "(same origin)"}${SEARCH_PATH}`;
+if (apiLabel) {
+  apiLabel.textContent = `${API_BASE || "(same origin)"}${SEARCH_PATH}`;
+}
 
 let activeController = null;
 let liveTimer = null;
@@ -46,6 +49,7 @@ class NoBackendError extends Error {
 }
 
 function setStatus(text, kind = "info") {
+  if (!statusEl) return;
   statusEl.textContent = text || "";
   statusEl.style.color =
     kind === "error" ? "var(--danger)" : kind === "ok" ? "var(--ok)" : "var(--muted)";
@@ -62,13 +66,16 @@ function escapeHtml(s) {
 
 function renderInlineMarkdown(text) {
   const codeTokens = [];
+  const linkTokens = [];
   let out = escapeHtml(text).replace(/`([^`]+)`/g, (_, code) => {
     const token = `@@CODE${codeTokens.length}@@`;
     codeTokens.push(`<code>${code}</code>`);
     return token;
   });
   out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label, url) => {
-    return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
+    const token = `@@LINK${linkTokens.length}@@`;
+    linkTokens.push(`<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`);
+    return token;
   });
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/__([^_]+)__/g, "<strong>$1</strong>");
@@ -78,6 +85,7 @@ function renderInlineMarkdown(text) {
     /(https?:\/\/[^\s<]+)/g,
     '<a href="$1" target="_blank" rel="noreferrer">$1</a>'
   );
+  out = out.replace(/@@LINK(\d+)@@/g, (_, index) => linkTokens[Number(index)] || "");
   out = out.replace(/@@CODE(\d+)@@/g, (_, index) => codeTokens[Number(index)] || "");
   return out;
 }
@@ -277,8 +285,8 @@ function showHomeView() {
   if (resultsSection) resultsSection.hidden = true;
 }
 
-const summarizeBtn = document.getElementById("summarizeBtn");
-const summaryContainer = document.getElementById("summaryContainer");
+const summarizeBtn = doc?.getElementById("summarizeBtn");
+const summaryContainer = doc?.getElementById("summaryContainer");
 
 function hasActiveQuery() {
   return Boolean(String(lastQuery || "").trim());
@@ -503,21 +511,6 @@ function setLive(enabled) {
   }, 2000);
 }
 
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = String(input.value || "").trim();
-  if (!q) return;
-  search(q);
-});
-
-formTop?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = String(inputTop?.value || "").trim();
-  if (!q) return;
-  input.value = q;
-  search(q);
-});
-
 function firstNavigableResultHref() {
   const a = list.querySelector(".resultTitle[href]");
   const href = a?.getAttribute("href") || "";
@@ -525,67 +518,14 @@ function firstNavigableResultHref() {
   return href;
 }
 
-luckyBtn?.addEventListener("click", () => {
-  const q = String(input.value || "").trim();
-  if (!q) return;
-  search(q).then(() => {
-    const href = firstNavigableResultHref();
-    if (href) window.open(href, "_blank", "noreferrer");
-  });
-});
-
 function syncClearButton() {
   if (!clearBtn) return;
   clearBtn.hidden = !String(input.value || "");
 }
 
-input.addEventListener("input", () => {
-  syncClearButton();
-  if (inputTop) inputTop.value = input.value;
-});
-
-clearBtn?.addEventListener("click", () => {
-  input.value = "";
-  if (inputTop) inputTop.value = "";
-  lastQuery = "";
-  syncClearButton();
-  syncSummarizeButton();
-  clearSummary();
-  setStatus("");
-  setLive(false);
-  if (liveToggle) liveToggle.checked = false;
-  showHomeView();
-  list.innerHTML = "";
-  list.hidden = true;
-  emptyState.hidden = false;
-  emptyState.querySelector(".emptyTitle").textContent = "Bereit.";
-  emptyState.querySelector(".emptyText").textContent = "Gib einen Suchbegriff ein, um Ergebnisse zu sehen.";
-  input.focus();
-});
-
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    if (activeController) activeController.abort();
-    input.blur();
-  }
-});
-
-liveToggle?.addEventListener("change", () => {
-  setLive(Boolean(liveToggle.checked));
-});
-
-summarizeBtn?.addEventListener("click", () => {
-  const q = String(lastQuery || "").trim();
-  if (!q) {
-    syncSummarizeButton();
-    setStatus("Suche zuerst nach etwas, bevor du die KI-Zusammenfassung nutzt.");
-    return;
-  }
-  search(q, true);
-});
-
 // Settings Logic
 function loadSettings() {
+  if (!useCustomKey || !ollamaKeyInput || !ollamaHostInput || !customKeyFields) return;
   const settings = JSON.parse(localStorage.getItem("coocle_settings") || "{}");
   useCustomKey.checked = !!settings.useCustomKey;
   ollamaKeyInput.value = settings.ollamaKey || "";
@@ -594,6 +534,7 @@ function loadSettings() {
 }
 
 function handleSaveSettings() {
+  if (!useCustomKey || !ollamaKeyInput || !ollamaHostInput || !settingsModal) return;
   const settings = {
     useCustomKey: useCustomKey.checked,
     ollamaKey: ollamaKeyInput.value.trim(),
@@ -616,6 +557,7 @@ function handleSaveSettings() {
 }
 
 async function updateCredits() {
+  if (!creditStatus) return;
   try {
     const res = await fetch(`${API_BASE}/api/credits`);
     if (res.ok) {
@@ -632,37 +574,125 @@ async function updateCredits() {
   }
 }
 
-settingsBtn?.addEventListener("click", () => {
-  loadSettings();
-  updateCredits();
-  settingsModal.hidden = false;
-});
-
-closeSettings?.addEventListener("click", () => {
-  settingsModal.hidden = true;
-});
-
-saveSettingsBtn?.addEventListener("click", handleSaveSettings);
-
-useCustomKey?.addEventListener("change", () => {
-  customKeyFields.hidden = !useCustomKey.checked;
-});
-
-// init
-loadSettings();
-updateCredits();
-document.querySelectorAll(".topicChip").forEach((chip) => {
-  chip.addEventListener("click", () => {
-    const q = chip.dataset.q;
+if (doc) {
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = String(input?.value || "").trim();
     if (!q) return;
-    input.value = q;
-    if (inputTop) inputTop.value = q;
-    syncClearButton();
     search(q);
   });
-});
 
-showHomeView();
-syncClearButton();
-syncSummarizeButton();
+  formTop?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = String(inputTop?.value || "").trim();
+    if (!q) return;
+    if (input) input.value = q;
+    search(q);
+  });
+
+  luckyBtn?.addEventListener("click", () => {
+    const q = String(input?.value || "").trim();
+    if (!q) return;
+    search(q).then(() => {
+      const href = firstNavigableResultHref();
+      if (href && typeof window !== "undefined") window.open(href, "_blank", "noreferrer");
+    });
+  });
+
+  input?.addEventListener("input", () => {
+    syncClearButton();
+    if (inputTop) inputTop.value = input.value;
+  });
+
+  clearBtn?.addEventListener("click", () => {
+    if (!input) return;
+    input.value = "";
+    if (inputTop) inputTop.value = "";
+    lastQuery = "";
+    syncClearButton();
+    syncSummarizeButton();
+    clearSummary();
+    setStatus("");
+    setLive(false);
+    if (liveToggle) liveToggle.checked = false;
+    showHomeView();
+    if (list) {
+      list.innerHTML = "";
+      list.hidden = true;
+    }
+    if (emptyState) {
+      emptyState.hidden = false;
+      emptyState.querySelector(".emptyTitle").textContent = "Bereit.";
+      emptyState.querySelector(".emptyText").textContent =
+        "Gib einen Suchbegriff ein, um Ergebnisse zu sehen.";
+    }
+    input.focus();
+  });
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (activeController) activeController.abort();
+        input?.blur();
+      }
+    });
+  }
+
+  liveToggle?.addEventListener("change", () => {
+    setLive(Boolean(liveToggle.checked));
+  });
+
+  summarizeBtn?.addEventListener("click", () => {
+    const q = String(lastQuery || "").trim();
+    if (!q) {
+      syncSummarizeButton();
+      setStatus("Suche zuerst nach etwas, bevor du die KI-Zusammenfassung nutzt.");
+      return;
+    }
+    search(q, true);
+  });
+
+  settingsBtn?.addEventListener("click", () => {
+    loadSettings();
+    updateCredits();
+    settingsModal.hidden = false;
+  });
+
+  closeSettings?.addEventListener("click", () => {
+    settingsModal.hidden = true;
+  });
+
+  saveSettingsBtn?.addEventListener("click", handleSaveSettings);
+
+  useCustomKey?.addEventListener("change", () => {
+    customKeyFields.hidden = !useCustomKey.checked;
+  });
+
+  loadSettings();
+  updateCredits();
+  doc.querySelectorAll(".topicChip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const q = chip.dataset.q;
+      if (!q || !input) return;
+      input.value = q;
+      if (inputTop) inputTop.value = q;
+      syncClearButton();
+      search(q);
+    });
+  });
+
+  showHomeView();
+  syncClearButton();
+  syncSummarizeButton();
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    escapeHtml,
+    formatSummaryBody,
+    renderInlineMarkdown,
+    renderMarkdown,
+    toResultsShape,
+  };
+}
 

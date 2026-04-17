@@ -29,6 +29,7 @@ from .summarize import OllamaChatConfig, SummaryResult, env_chat_config, summari
 ROOT = Path(__file__).resolve().parents[1]
 FREE_SUMMARY_LIMIT = 10
 logger = logging.getLogger(__name__)
+SUMMARY_CONTEXT_LIMIT = 5
 
 
 def _db_path() -> str:
@@ -75,6 +76,22 @@ def _increment_usage(conn, ip: str, day: str) -> None:
         (ip, day),
     )
     conn.commit()
+
+
+def _enrich_results_for_summary(conn, results: list[dict], limit: int = SUMMARY_CONTEXT_LIMIT) -> list[dict]:
+    enriched: list[dict] = []
+    for idx, result in enumerate(results):
+        prepared = dict(result)
+        url = str(prepared.get("url") or "").strip()
+        if idx < limit and url:
+            row = conn.execute(
+                "SELECT content FROM pages WHERE url = ?",
+                (url,),
+            ).fetchone()
+            if row and row["content"]:
+                prepared["page_content"] = row["content"]
+        enriched.append(prepared)
+    return enriched
 
 
 @asynccontextmanager
@@ -201,8 +218,9 @@ async def api_search(
                     timeout_s=default_cfg.timeout_s,
                 )
 
+            summary_inputs = _enrich_results_for_summary(conn, results)
             async with httpx.AsyncClient() as client:
-                summary_result = await summarize_results(client, q, results, cfg=chat_cfg)
+                summary_result = await summarize_results(client, q, summary_inputs, cfg=chat_cfg)
 
             if summary_result.status == "ok" and summary_result.summary and not x_ollama_key:
                 _increment_usage(conn, ip, day)
