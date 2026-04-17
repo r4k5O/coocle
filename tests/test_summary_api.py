@@ -235,3 +235,44 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
         self.assertIn("Retry-After", second.headers)
+
+    def test_general_api_requests_are_rate_limited(self) -> None:
+        self.main_module.app.state.rate_limiter._events.clear()
+        os.environ["COOCLE_API_RATE_LIMIT"] = "1"
+
+        first = self.client.get("/api/credits")
+        second = self.client.get("/api/credits")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertIn("Retry-After", second.headers)
+        self.assertIn("Zu viele API-Anfragen", second.json()["detail"])
+
+    def test_api_responses_include_security_headers(self) -> None:
+        response = self.client.get("/api/credits")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_local_custom_ollama_host_is_allowed_for_local_client(self) -> None:
+        with patch.object(
+            self.main_module,
+            "summarize_results",
+            AsyncMock(return_value=SummaryResult(summary="Lokale Summary", status="ok")),
+        ) as summarize_mock:
+            response = self.client.get(
+                "/api/search",
+                params={"q": "python", "summarize": "true"},
+                headers={
+                    "X-Ollama-Key": "ollama_test_key",
+                    "X-Ollama-Host": "http://localhost:11434",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["summary"], "Lokale Summary")
+        cfg = summarize_mock.await_args.kwargs["cfg"]
+        self.assertEqual(cfg.host, "http://localhost:11434")
