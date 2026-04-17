@@ -276,3 +276,40 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(response.json()["summary"], "Lokale Summary")
         cfg = summarize_mock.await_args.kwargs["cfg"]
         self.assertEqual(cfg.host, "http://localhost:11434")
+
+    def test_search_uses_hybrid_mode_by_default(self) -> None:
+        with patch.object(
+            self.main_module,
+            "vec_search",
+            AsyncMock(
+                return_value=[
+                    {
+                        "title": "Vector Treffer",
+                        "url": "https://example.com/vector",
+                        "snippet": "Semantischer Treffer",
+                        "score": 0.91,
+                    }
+                ]
+            ),
+        ) as vec_search_mock, patch.object(
+            self.main_module,
+            "fts_search",
+            return_value=[
+                {
+                    "title": "FTS Treffer",
+                    "url": "https://example.com/fts",
+                    "snippet": "Lexikalischer Treffer",
+                    "score": 0.77,
+                }
+            ],
+        ) as fts_search_mock:
+            response = self.client.get("/api/search", params={"q": "python"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            [item["url"] for item in payload["results"]],
+            ["https://example.com/vector", "https://example.com/fts"],
+        )
+        vec_search_mock.assert_awaited_once()
+        fts_search_mock.assert_called_once()

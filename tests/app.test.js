@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildSearchUrl,
   escapeHtml,
   formatSummaryBody,
   renderInlineMarkdown,
@@ -56,4 +57,16 @@ test("toResultsShape normalizes fallback payload fields", () => {
       _q: "python",
     },
   ]);
+});
+
+test("buildSearchUrl defaults searches to hybrid mode", () => {
+  global.window = { location: { origin: "https://coocle.test" } };
+
+  const url = buildSearchUrl("python testing", true);
+
+  assert.equal(url.searchParams.get("q"), "python testing");
+  assert.equal(url.searchParams.get("mode"), "hybrid");
+  assert.equal(url.searchParams.get("summarize"), "true");
+
+  delete global.window;
 });

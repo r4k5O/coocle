@@ -32,6 +32,7 @@ const customKeyFields = doc?.getElementById("customKeyFields");
 const ollamaKeyInput = doc?.getElementById("ollamaKey");
 const ollamaHostInput = doc?.getElementById("ollamaHost");
 const creditStatus = doc?.getElementById("creditStatus");
+const DEFAULT_SEARCH_MODE = "hybrid";
 
 if (apiLabel) {
   apiLabel.textContent = `${API_BASE || "(same origin)"}${SEARCH_PATH}`;
@@ -377,11 +378,7 @@ async function search(q, summarize = false) {
   activeController = new AbortController();
   syncSummarizeButton(true);
 
-  const url = new URL(`${API_BASE}${SEARCH_PATH}`, window.location.origin);
-  url.searchParams.set("q", query);
-  if (summarize) {
-    url.searchParams.set("summarize", "true");
-  }
+  const url = buildSearchUrl(query, summarize);
 
   const headers = { Accept: "application/json" };
   const settings = JSON.parse(localStorage.getItem("coocle_settings") || "{}");
@@ -495,6 +492,16 @@ async function search(q, summarize = false) {
     if (btnTop) btnTop.disabled = false;
     syncSummarizeButton();
   }
+}
+
+function buildSearchUrl(query, summarize = false) {
+  const url = new URL(`${API_BASE}${SEARCH_PATH}`, window.location.origin);
+  url.searchParams.set("q", String(query || "").trim());
+  url.searchParams.set("mode", DEFAULT_SEARCH_MODE);
+  if (summarize) {
+    url.searchParams.set("summarize", "true");
+  }
+  return url;
 }
 
 function setLive(enabled) {
@@ -688,6 +695,7 @@ if (doc) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    buildSearchUrl,
     escapeHtml,
     formatSummaryBody,
     renderInlineMarkdown,
@@ -695,4 +703,3 @@ if (typeof module !== "undefined" && module.exports) {
     toResultsShape,
   };
 }
-

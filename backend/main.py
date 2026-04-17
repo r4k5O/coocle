@@ -298,7 +298,7 @@ async def api_search(
     request: Request,
     q: Annotated[str, Query(min_length=1, max_length=200)],
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
-    mode: Annotated[str, Query(pattern="^(fts|vector|hybrid)$")] = "fts",
+    mode: Annotated[str, Query(pattern="^(fts|vector|hybrid)$")] = "hybrid",
     summarize: bool = False,
     x_ollama_key: Annotated[str | None, Header()] = None,
     x_ollama_host: Annotated[str | None, Header()] = None,
