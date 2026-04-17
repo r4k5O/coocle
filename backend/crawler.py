@@ -84,7 +84,7 @@ def _extract_links(base_url: str, html: str) -> list[str]:
 
 @dataclass(frozen=True)
 class CrawlConfig:
-    user_agent: str = "CoocleBot/0.1 (+local)"
+    user_agent: str = "CoocleBot/0.1"
     max_pages: int = 200
     max_depth: int = 2
     request_timeout_s: float = 15.0
