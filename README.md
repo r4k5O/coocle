@@ -2,6 +2,9 @@
 
 Coocle ist eine kleine lokale Suchmaschine mit eigenem Crawler, SQLite-Index, Volltextsuche, optionaler Vector Search und KI-Zusammenfassungen.
 
+## Probiere die Demo!
+Probier die Demo [hier](https://coocle-ctp8.onrender.com/).
+
 ## Stack
 
 - Frontend: `index.html`, `styles.css`, `app.js`
