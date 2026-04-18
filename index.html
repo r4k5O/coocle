@@ -1,160 +1,148 @@
 <!doctype html>
 <html lang="de">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/png" href="coocle_logo.png" />
-    <title>Coocle</title>
-    <meta name="color-scheme" content="light dark" />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div class="shell">
-      <header id="topbar" class="topbar" hidden>
-        <a class="topbarBrand" href="#" aria-label="Coocle Startseite">
-          <img class="topbarLogo" src="coocle_logo.png" alt="" />
-          <span class="topbarTitle">Coocle</span>
-        </a>
 
-        <form id="searchFormTop" class="topbarSearch" autocomplete="off">
-          <label class="srOnly" for="qTop">Suchbegriff</label>
-          <input
-            id="qTop"
-            name="q"
-            class="queryInput"
-            type="search"
-            placeholder="Coocle-Suche…"
-            minlength="1"
-          />
-          <button id="searchBtnTop" class="iconBtn" type="submit" aria-label="Suchen">⌕</button>
-        </form>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="coocle_logo.png" />
+  <title>Coocle</title>
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
 
-        <button id="settingsBtn" class="iconBtn" type="button" aria-label="Einstellungen">⚙</button>
-      </header>
+<body>
+  <div class="shell">
+    <header id="topbar" class="topbar" hidden>
+      <a class="topbarBrand" href="#" aria-label="Coocle Startseite">
+        <img class="topbarLogo" src="coocle_logo.png" alt="" />
+        <span class="topbarTitle">Coocle</span>
+      </a>
 
-      <main class="main" aria-label="Suche">
-        <section id="home" class="home" aria-label="Startseite">
-          <div class="hero">
-            <div class="heroLogoWrap">
-              <img class="heroLogo" src="coocle_logo.png" alt="Coocle Logo" />
-            </div>
-            <div class="heroWordmark" aria-label="Coocle">Coocle</div>
-            <div class="brandNote" role="note">
-              Unabhängiges Open-Source-Projekt, nicht mit Google verbunden.
-            </div>
+      <form id="searchFormTop" class="topbarSearch" autocomplete="off">
+        <label class="srOnly" for="qTop">Suchbegriff</label>
+        <input id="qTop" name="q" class="queryInput" type="search" placeholder="Coocle-Suche…" minlength="1" />
+        <button id="searchBtnTop" class="iconBtn" type="submit" aria-label="Suchen">⌕</button>
+      </form>
 
-            <form id="searchForm" class="homeSearch" autocomplete="off">
-              <label class="srOnly" for="q">Suchbegriff</label>
-              <div class="searchBox">
-                <span class="searchIcon" aria-hidden="true">⌕</span>
-                <input
-                  id="q"
-                  name="q"
-                  class="queryInput"
-                  type="search"
-                  placeholder="Suche in Coocle…"
-                  autofocus
-                  required
-                  minlength="1"
-                  aria-describedby="hint"
-                />
-                <button id="clearBtn" class="iconBtn" type="button" aria-label="Eingabe löschen" hidden>
-                  ×
-                </button>
-              </div>
+      <button id="settingsBtn" class="iconBtn" type="button" aria-label="Einstellungen">⚙</button>
+    </header>
 
-              <div class="actions">
-                <button id="searchBtn" class="actionBtn" type="submit">Coocle-Suche</button>
-                <button id="luckyBtn" class="actionBtn secondary" type="button">Auf gut Glück</button>
-              </div>
-            </form>
+    <main class="main" aria-label="Suche">
+      <section id="home" class="home" aria-label="Startseite">
+        <div class="hero">
+          <div class="heroLogoWrap">
+            <img class="heroLogo" src="coocle_logo.png" alt="Coocle Logo" />
+          </div>
+          <div class="heroWordmark" aria-label="Coocle">Coocle</div>
+          <div class="brandNote" role="note">
+            Unabhängiges Open-Source-Projekt, nicht mit Google verbunden.
+          </div>
 
-            <div class="topics">
-              <span class="topicsLabel">Themen erkunden:</span>
-              <div class="topicChips">
-                <button class="topicChip" data-q="Nachrichten">📰 Nachrichten</button>
-                <button class="topicChip" data-q="Rezepte">🍳 Rezepte</button>
-                <button class="topicChip" data-q="Wissenschaft">🧬 Wissenschaft</button>
-                <button class="topicChip" data-q="Geschichte">🏛️ Geschichte</button>
-                <button class="topicChip" data-q="Reisen">✈️ Reisen</button>
-              </div>
+          <form id="searchForm" class="homeSearch" autocomplete="off">
+            <label class="srOnly" for="q">Suchbegriff</label>
+            <div class="searchBox">
+              <span class="searchIcon" aria-hidden="true">⌕</span>
+              <input id="q" name="q" class="queryInput" type="search" placeholder="Suche in Coocle…" autofocus required
+                minlength="1" aria-describedby="hint" />
+              <button id="clearBtn" class="iconBtn" type="button" aria-label="Eingabe löschen" hidden>
+                ×
+              </button>
             </div>
 
-            <div class="metaRow">
-              <div id="hint" class="hint">
-                Tipp: <kbd>Enter</kbd> suchen, <kbd>Esc</kbd> abbrechen
-              </div>
-              <div id="status" class="status" aria-live="polite"></div>
+            <div class="actions">
+              <button id="searchBtn" class="actionBtn" type="submit">Coocle-Suche</button>
+              <button id="luckyBtn" class="actionBtn secondary" type="button">Auf gut Glück</button>
+            </div>
+          </form>
+
+          <div class="topics">
+            <span class="topicsLabel">Themen erkunden:</span>
+            <div class="topicChips">
+              <button class="topicChip" data-q="Nachrichten">📰 Nachrichten</button>
+              <button class="topicChip" data-q="Rezepte">🍳 Rezepte</button>
+              <button class="topicChip" data-q="Wissenschaft">🧬 Wissenschaft</button>
+              <button class="topicChip" data-q="Geschichte">🏛️ Geschichte</button>
+              <button class="topicChip" data-q="Reisen">✈️ Reisen</button>
             </div>
           </div>
-        </section>
 
-        <section id="results" class="results" aria-label="Ergebnisse" hidden>
-          <div class="resultsMeta">
-            <span id="resultCount"></span>
-            <span class="dot">·</span>
-            <span>API: <code id="apiLabel"></code></span>
-            <span class="dot">·</span>
-            <label class="liveToggle">
-              <input id="liveToggle" type="checkbox" title="Automatisch aktualisieren" />
-              Live
+          <div class="metaRow">
+            <div id="hint" class="hint">
+              Tipp: <kbd>Enter</kbd> suchen, <kbd>Esc</kbd> abbrechen
+            </div>
+            <div id="status" class="status" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="results" class="results" aria-label="Ergebnisse" hidden>
+        <div class="resultsMeta">
+          <span id="resultCount"></span>
+          <span class="dot">·</span>
+          <span>API: <code id="apiLabel"></code></span>
+          <span class="dot">·</span>
+          <label class="liveToggle">
+            <input id="liveToggle" type="checkbox" title="Automatisch aktualisieren" />
+            Live
+          </label>
+          <span class="dot">·</span>
+          <button id="summarizeBtn" class="summarizeBtn">✨ Zusammenfassen</button>
+        </div>
+
+        <div id="summaryContainer" hidden></div>
+
+        <div id="emptyState" class="emptyState">
+          <div class="emptyTitle">Keine Treffer.</div>
+          <div class="emptyText">Probiere einen anderen Suchbegriff.</div>
+        </div>
+        <ol id="resultsList" class="resultsList" hidden></ol>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Coocle · <a href="/pages">Pages & Archiv</a> · <a href="https://github.com/r4k5O/Coocle">Coocle Source
+          Code</a></span>
+    </footer>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal" hidden>
+    <div class="modalContent">
+      <div class="modalHeader">
+        <h2>Einstellungen</h2>
+        <button id="closeSettings" class="closeBtn">&times;</button>
+      </div>
+      <div class="modalBody">
+        <section class="settingsSection">
+          <h3>KI-Zusammenfassung</h3>
+          <div id="creditStatus" class="creditStatus">Lade Guthaben...</div>
+
+          <div class="settingItem">
+            <label class="switchLabel">
+              <input type="checkbox" id="useCustomKey" />
+              <span>Eigenen Ollama-Key nutzen</span>
             </label>
-            <span class="dot">·</span>
-            <button id="summarizeBtn" class="summarizeBtn">✨ Zusammenfassen</button>
           </div>
 
-          <div id="summaryContainer" hidden></div>
-
-          <div id="emptyState" class="emptyState">
-            <div class="emptyTitle">Keine Treffer.</div>
-            <div class="emptyText">Probiere einen anderen Suchbegriff.</div>
+          <div id="customKeyFields" hidden>
+            <div class="formGroup">
+              <label for="ollamaKey">Ollama.com API Key</label>
+              <input type="password" id="ollamaKey" placeholder="ollama_..." />
+            </div>
+            <div class="formGroup">
+              <label for="ollamaHost">Ollama Host</label>
+              <input type="text" id="ollamaHost" value="https://ollama.com/api" />
+            </div>
           </div>
-          <ol id="resultsList" class="resultsList" hidden></ol>
         </section>
-      </main>
-
-      <footer class="footer">
-        <span>Coocle · <a href="/pages">Pages & Archiv</a></span>
-      </footer>
-    </div>
-
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="modal" hidden>
-      <div class="modalContent">
-        <div class="modalHeader">
-          <h2>Einstellungen</h2>
-          <button id="closeSettings" class="closeBtn">&times;</button>
-        </div>
-        <div class="modalBody">
-          <section class="settingsSection">
-            <h3>KI-Zusammenfassung</h3>
-            <div id="creditStatus" class="creditStatus">Lade Guthaben...</div>
-            
-            <div class="settingItem">
-              <label class="switchLabel">
-                <input type="checkbox" id="useCustomKey" />
-                <span>Eigenen Ollama-Key nutzen</span>
-              </label>
-            </div>
-
-            <div id="customKeyFields" hidden>
-              <div class="formGroup">
-                <label for="ollamaKey">Ollama.com API Key</label>
-                <input type="password" id="ollamaKey" placeholder="ollama_..." />
-              </div>
-              <div class="formGroup">
-                <label for="ollamaHost">Ollama Host</label>
-                <input type="text" id="ollamaHost" value="https://ollama.com/api" />
-              </div>
-            </div>
-          </section>
-        </div>
-        <div class="modalFooter">
-          <button id="saveSettings" class="actionBtn">Speichern</button>
-        </div>
+      </div>
+      <div class="modalFooter">
+        <button id="saveSettings" class="actionBtn">Speichern</button>
       </div>
     </div>
+  </div>
 
-    <script src="./app.js" defer></script>
-  </body>
+  <script src="./app.js" defer></script>
+</body>
+
 </html>
