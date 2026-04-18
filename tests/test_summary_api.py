@@ -19,6 +19,8 @@ class SummaryApiTests(unittest.TestCase):
         self.prev_start_crawler = os.environ.get("COOCLE_START_CRAWLER")
         self.prev_prewarm_astra = os.environ.get("COOCLE_PREWARM_ASTRA")
         self.prev_reset_data_on_start = os.environ.get("COOCLE_RESET_DATA_ON_START")
+        self.prev_astra_token = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
+        self.prev_astra_endpoint = os.environ.get("ASTRA_DB_API_ENDPOINT")
         self.prev_api_rate_limit = os.environ.get("COOCLE_API_RATE_LIMIT")
         self.prev_api_rate_window = os.environ.get("COOCLE_API_RATE_WINDOW_S")
         self.prev_summary_rate_limit = os.environ.get("COOCLE_SUMMARY_RATE_LIMIT")
@@ -28,6 +30,8 @@ class SummaryApiTests(unittest.TestCase):
         os.environ["COOCLE_START_CRAWLER"] = "0"
         os.environ["COOCLE_PREWARM_ASTRA"] = "0"
         os.environ["COOCLE_RESET_DATA_ON_START"] = "0"
+        os.environ["ASTRA_DB_APPLICATION_TOKEN"] = ""
+        os.environ["ASTRA_DB_API_ENDPOINT"] = ""
         os.environ["COOCLE_API_RATE_LIMIT"] = "100"
         os.environ["COOCLE_API_RATE_WINDOW_S"] = "60"
         os.environ["COOCLE_SUMMARY_RATE_LIMIT"] = "10"
@@ -78,6 +82,14 @@ class SummaryApiTests(unittest.TestCase):
             os.environ.pop("COOCLE_RESET_DATA_ON_START", None)
         else:
             os.environ["COOCLE_RESET_DATA_ON_START"] = self.prev_reset_data_on_start
+        if self.prev_astra_token is None:
+            os.environ.pop("ASTRA_DB_APPLICATION_TOKEN", None)
+        else:
+            os.environ["ASTRA_DB_APPLICATION_TOKEN"] = self.prev_astra_token
+        if self.prev_astra_endpoint is None:
+            os.environ.pop("ASTRA_DB_API_ENDPOINT", None)
+        else:
+            os.environ["ASTRA_DB_API_ENDPOINT"] = self.prev_astra_endpoint
         if self.prev_api_rate_limit is None:
             os.environ.pop("COOCLE_API_RATE_LIMIT", None)
         else:
@@ -345,6 +357,10 @@ class SummaryApiTests(unittest.TestCase):
 
         with patch.object(self.main_module.astra_utils, "is_astra_enabled", return_value=True), patch.object(
             self.main_module.astra_utils,
+            "has_astra_credentials",
+            return_value=True,
+        ), patch.object(
+            self.main_module.astra_utils,
             "get_astra_collection",
             return_value=type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})(),
         ):
@@ -394,3 +410,27 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["pending_indexed_count"], 1)
         self.assertEqual(payload["indexed_pages"][0]["url"], "https://example.com/live-batch")
         self.assertEqual(payload["indexed_pages"][0]["storage_state"], "pending_batch")
+
+    def test_stats_and_overview_use_astra_estimate_when_higher_than_sqlite(self) -> None:
+        fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
+
+        with patch.object(self.main_module.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            self.main_module.astra_utils,
+            "get_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(self.main_module.astra_utils, "estimated_document_count", return_value=5471):
+            stats_response = self.client.get("/api/stats")
+            overview_response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(stats_response.status_code, 200)
+        self.assertEqual(overview_response.status_code, 200)
+
+        stats_payload = stats_response.json()
+        overview_payload = overview_response.json()
+
+        self.assertEqual(stats_payload["sqlite_pages"], 1)
+        self.assertEqual(stats_payload["astra_pages_estimate"], 5471)
+        self.assertEqual(stats_payload["pages"], 5471)
+        self.assertEqual(overview_payload["summary"]["sqlite_indexed_count"], 1)
+        self.assertEqual(overview_payload["summary"]["indexed_count"], 5471)
+        self.assertEqual(overview_payload["astra"]["document_count_estimate"], 5471)

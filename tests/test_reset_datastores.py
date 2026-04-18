@@ -88,6 +88,29 @@ class AstraResetTests(unittest.TestCase):
     def test_clear_documents_ignores_missing_collection(self) -> None:
         self.assertEqual(astra_utils.clear_documents(None), 0)
 
+    def test_estimated_document_count_returns_none_for_missing_collection(self) -> None:
+        self.assertIsNone(astra_utils.estimated_document_count(None))
+
+    def test_reset_marker_roundtrip_uses_fixed_document_id(self) -> None:
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.filter = None
+                self.replacement = None
+                self.upsert = None
+
+            def find_one_and_replace(self, *, filter, replacement, upsert):
+                self.filter = filter
+                self.replacement = replacement
+                self.upsert = upsert
+
+        collection = FakeCollection()
+
+        astra_utils.set_reset_marker(collection, "render:abc123")
+
+        self.assertEqual(collection.filter, {"_id": astra_utils.ASTRA_RESET_MARKER_ID})
+        self.assertEqual(collection.replacement["deploy_key"], "render:abc123")
+        self.assertTrue(collection.upsert)
+
 
 class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_reset_clears_sqlite_and_astra_when_credentials_exist(self) -> None:
@@ -95,38 +118,67 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
 
         main = reload(imported_main)
         fake_collection = SimpleNamespace(full_name="testspace.coocle_pages")
-
-        with patch.dict(os.environ, {"COOCLE_RESET_DATA_ON_START": "1"}, clear=False), patch.object(
-            main.dbmod,
-            "reset_runtime_data",
-            return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
-        ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
-            main.astra_utils,
-            "get_astra_collection",
-            return_value=fake_collection,
-        ) as get_collection, patch.object(main.astra_utils, "clear_documents", return_value=9) as clear_documents:
-            with patch.object(main.logger, "warning") as log_warning:
-                await main._reset_datastores_on_start(object())
-
-        reset_db.assert_called_once()
-        get_collection.assert_called_once_with()
-        clear_documents.assert_called_once_with(fake_collection)
-        self.assertGreaterEqual(log_warning.call_count, 2)
-
-    async def test_startup_reset_tolerates_astra_failure_when_not_strict(self) -> None:
-        from backend import main as imported_main
-
-        main = reload(imported_main)
+        fake_meta_collection = object()
 
         with patch.dict(
             os.environ,
-            {"COOCLE_RESET_DATA_ON_START": "1", "COOCLE_RESET_DATA_STRICT": "0"},
+            {"COOCLE_RESET_DATA_ON_START": "1", "RENDER_GIT_COMMIT": "abc123"},
             clear=False,
         ), patch.object(
             main.dbmod,
             "reset_runtime_data",
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
         ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            main.astra_utils,
+            "get_reset_marker",
+            return_value=None,
+        ), patch.object(
+            main.astra_utils,
+            "get_astra_collection",
+            return_value=fake_collection,
+        ) as get_collection, patch.object(main.astra_utils, "clear_documents", return_value=9) as clear_documents:
+            with patch.object(main.astra_utils, "set_reset_marker") as set_reset_marker, patch.object(
+                main.logger, "warning"
+            ) as log_warning:
+                await main._reset_datastores_on_start(object())
+
+        reset_db.assert_called_once()
+        get_collection.assert_called_once_with()
+        clear_documents.assert_called_once_with(fake_collection)
+        set_reset_marker.assert_called_once_with(fake_meta_collection, "render:abc123")
+        self.assertGreaterEqual(log_warning.call_count, 2)
+
+    async def test_startup_reset_tolerates_astra_failure_when_not_strict(self) -> None:
+        from backend import main as imported_main
+
+        main = reload(imported_main)
+        fake_meta_collection = object()
+
+        with patch.dict(
+            os.environ,
+            {
+                "COOCLE_RESET_DATA_ON_START": "1",
+                "COOCLE_RESET_DATA_STRICT": "0",
+                "RENDER_GIT_COMMIT": "abc123",
+            },
+            clear=False,
+        ), patch.object(
+            main.dbmod,
+            "reset_runtime_data",
+            return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
+        ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            main.astra_utils,
+            "get_reset_marker",
+            return_value=None,
+        ), patch.object(
             main.astra_utils,
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
@@ -142,16 +194,29 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         from backend import main as imported_main
 
         main = reload(imported_main)
+        fake_meta_collection = object()
 
         with patch.dict(
             os.environ,
-            {"COOCLE_RESET_DATA_ON_START": "1", "COOCLE_RESET_DATA_STRICT": "1"},
+            {
+                "COOCLE_RESET_DATA_ON_START": "1",
+                "COOCLE_RESET_DATA_STRICT": "1",
+                "RENDER_GIT_COMMIT": "abc123",
+            },
             clear=False,
         ), patch.object(
             main.dbmod,
             "reset_runtime_data",
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
         ), patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            main.astra_utils,
+            "get_reset_marker",
+            return_value=None,
+        ), patch.object(
             main.astra_utils,
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
@@ -179,6 +244,32 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                 await main._reset_datastores_on_start(object())
 
         reset_db.assert_called_once()
+        get_collection.assert_not_called()
+
+    async def test_startup_reset_skips_when_same_deploy_marker_exists(self) -> None:
+        from backend import main as imported_main
+
+        main = reload(imported_main)
+        fake_meta_collection = object()
+
+        with patch.dict(
+            os.environ,
+            {"COOCLE_RESET_DATA_ON_START": "1", "RENDER_GIT_COMMIT": "abc123"},
+            clear=False,
+        ), patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            main.astra_utils,
+            "get_reset_marker",
+            return_value={"_id": astra_utils.ASTRA_RESET_MARKER_ID, "deploy_key": "render:abc123"},
+        ), patch.object(main.dbmod, "reset_runtime_data") as reset_db, patch.object(
+            main.astra_utils, "get_astra_collection"
+        ) as get_collection:
+            await main._reset_datastores_on_start(object())
+
+        reset_db.assert_not_called()
         get_collection.assert_not_called()
 
     async def test_startup_reset_skips_everything_when_disabled(self) -> None:

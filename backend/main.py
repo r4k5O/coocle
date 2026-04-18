@@ -193,10 +193,54 @@ def _excerpt(text: str | None, limit: int = 220) -> str:
     return f"{value[: max(1, limit - 1)].rstrip()}…"
 
 
+def _astra_collection_for_runtime():
+    if not astra_utils.has_astra_credentials():
+        return None
+    return astra_utils.get_astra_collection()
+
+
+def _astra_document_count_estimate(collection) -> int | None:
+    return astra_utils.estimated_document_count(collection)
+
+
+def _reset_deploy_key() -> str | None:
+    explicit = os.environ.get("COOCLE_RESET_DEPLOY_KEY", "").strip()
+    if explicit:
+        return explicit
+
+    render_commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    if render_commit:
+        return f"render:{render_commit}"
+
+    return None
+
+
 async def _reset_datastores_on_start(conn) -> None:
     if not _truthy_env("COOCLE_RESET_DATA_ON_START", default=False):
         return
     strict = _truthy_env("COOCLE_RESET_DATA_STRICT", default=False)
+    reset_key = _reset_deploy_key()
+    meta_collection = None
+    astra_reset_succeeded = not astra_utils.has_astra_credentials()
+
+    if reset_key and astra_utils.has_astra_credentials():
+        try:
+            meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            if meta_collection is None:
+                raise RuntimeError("Astra reset metadata collection could not be opened.")
+
+            marker = await asyncio.to_thread(astra_utils.get_reset_marker, meta_collection)
+            if marker and marker.get("deploy_key") == reset_key:
+                logger.info("Startup reset already applied for %s; skipping", reset_key)
+                return
+        except Exception:
+            logger.exception(
+                "Startup reset marker lookup failed%s",
+                "; aborting startup" if strict else "; skipping reset for safety",
+            )
+            if strict:
+                raise
+            return
 
     try:
         cleared = dbmod.reset_runtime_data(conn)
@@ -221,6 +265,7 @@ async def _reset_datastores_on_start(conn) -> None:
             raise RuntimeError("AstraDB reset requested on startup, but the collection could not be opened.")
 
         deleted = await asyncio.to_thread(astra_utils.clear_documents, astra_collection)
+        astra_reset_succeeded = True
         logger.warning(
             "Startup reset cleared AstraDB collection %s: %s document(s) removed",
             getattr(astra_collection, "full_name", "unknown"),
@@ -230,6 +275,18 @@ async def _reset_datastores_on_start(conn) -> None:
         logger.exception("Startup Astra reset failed%s", "; aborting startup" if strict else "; continuing")
         if strict:
             raise
+
+    if reset_key and meta_collection is not None and astra_reset_succeeded:
+        try:
+            await asyncio.to_thread(astra_utils.set_reset_marker, meta_collection, reset_key)
+            logger.info("Startup reset marker stored for %s", reset_key)
+        except Exception:
+            logger.exception(
+                "Startup reset marker update failed%s",
+                "; aborting startup" if strict else "; continuing",
+            )
+            if strict:
+                raise
 
 
 @asynccontextmanager
@@ -463,9 +520,18 @@ async def get_credits(request: Request):
 @app.get("/api/stats")
 def api_stats(request: Request):
     conn = _conn_from_request(request)
-    pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
+    sqlite_pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
     queued = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-    return {"pages": pages, "queued": queued, "db": str(_db_path())}
+    astra_collection = _astra_collection_for_runtime()
+    astra_count = _astra_document_count_estimate(astra_collection)
+    pages = max(int(sqlite_pages), int(astra_count or 0))
+    return {
+        "pages": pages,
+        "queued": queued,
+        "db": str(_db_path()),
+        "sqlite_pages": sqlite_pages,
+        "astra_pages_estimate": astra_count,
+    }
 
 
 @app.get("/api/pages/overview")
@@ -557,16 +623,23 @@ def api_pages_overview(
                 }
             )
 
-    astra_collection = astra_utils.get_astra_collection() if astra_utils.is_astra_enabled() else None
+    astra_collection = _astra_collection_for_runtime()
+    astra_count = _astra_document_count_estimate(astra_collection)
     astra_status = {
         "enabled": astra_utils.is_astra_enabled(),
+        "credentials_configured": astra_utils.has_astra_credentials(),
         "connected": bool(astra_collection),
         "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
+        "document_count_estimate": astra_count,
     }
+
+    visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
+    effective_indexed_count = max(int(visible_indexed_count), int(astra_count or 0))
 
     return {
         "summary": {
-            "indexed_count": indexed_count + len(set(pending_urls) - existing_pending_urls),
+            "indexed_count": effective_indexed_count,
+            "sqlite_indexed_count": indexed_count,
             "queued_count": queued_count,
             "active_scans": len(current_scans),
             "pending_indexed_count": len(set(pending_urls)),

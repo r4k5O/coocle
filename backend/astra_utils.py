@@ -9,11 +9,42 @@ from typing import Iterable
 logger = logging.getLogger(__name__)
 ASTRA_WRITE_BATCH_SIZE = 100
 ASTRA_DELETE_TIMEOUT_MS = 120_000
+ASTRA_COUNT_TIMEOUT_MS = 30_000
+ASTRA_META_COLLECTION_NAME = "coocle_internal"
+ASTRA_RESET_MARKER_ID = "__coocle_reset_marker__"
 
 
 def _chunked(items: list, chunk_size: int):
     for start in range(0, len(items), chunk_size):
         yield items[start : start + chunk_size]
+
+
+@lru_cache(maxsize=1)
+def get_astra_database():
+    from astrapy import DataAPIClient
+
+    token = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
+    endpoint = os.environ.get("ASTRA_DB_API_ENDPOINT")
+    if not token or not endpoint:
+        raise ValueError("Missing AstraDB credentials (ASTRA_DB_APPLICATION_TOKEN or ASTRA_DB_API_ENDPOINT)")
+
+    client = DataAPIClient(token)
+    return client.get_database(endpoint)
+
+
+@lru_cache(maxsize=1)
+def get_astra_meta_collection():
+    try:
+        collection_name = os.environ.get("ASTRA_DB_META_COLLECTION", ASTRA_META_COLLECTION_NAME)
+        database = get_astra_database()
+        existing = set(database.list_collection_names())
+        if collection_name in existing:
+            return database.get_collection(collection_name)
+        return database.create_collection(collection_name)
+    except Exception as e:
+        logger.warning("AstraDB metadata unavailable: %s", e)
+        return None
+
 
 @lru_cache(maxsize=1)
 def get_astra_collection():
@@ -30,15 +61,8 @@ def get_astra_collection():
             VectorServiceOptions,
         )
 
-        token = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
-        endpoint = os.environ.get("ASTRA_DB_API_ENDPOINT")
         collection_name = os.environ.get("ASTRA_DB_COLLECTION", "coocle_pages")
-
-        if not token or not endpoint:
-            raise ValueError("Missing AstraDB credentials (ASTRA_DB_APPLICATION_TOKEN or ASTRA_DB_API_ENDPOINT)")
-
-        client = DataAPIClient(token)
-        database = client.get_database(endpoint)
+        database = get_astra_database()
 
         # check if collection exists
         col_list = list(database.list_collections())
@@ -80,6 +104,8 @@ def is_astra_enabled() -> bool:
 
 
 def reset_astra_cache() -> None:
+    get_astra_database.cache_clear()
+    get_astra_meta_collection.cache_clear()
     get_astra_collection.cache_clear()
 
 
@@ -109,3 +135,32 @@ def clear_documents(collection, *, general_method_timeout_ms: int = ASTRA_DELETE
 
     result = collection.delete_many({}, general_method_timeout_ms=general_method_timeout_ms)
     return int(getattr(result, "deleted_count", 0) or 0)
+
+
+def estimated_document_count(collection, *, general_method_timeout_ms: int = ASTRA_COUNT_TIMEOUT_MS) -> int | None:
+    if collection is None:
+        return None
+
+    try:
+        return int(
+            collection.estimated_document_count(general_method_timeout_ms=general_method_timeout_ms)
+        )
+    except Exception:
+        logger.debug("AstraDB estimated count failed", exc_info=True)
+        return None
+
+
+def get_reset_marker(meta_collection):
+    if meta_collection is None:
+        return None
+    return meta_collection.find_one({"_id": ASTRA_RESET_MARKER_ID})
+
+
+def set_reset_marker(meta_collection, deploy_key: str) -> None:
+    if meta_collection is None or not deploy_key:
+        return
+    meta_collection.find_one_and_replace(
+        filter={"_id": ASTRA_RESET_MARKER_ID},
+        replacement={"_id": ASTRA_RESET_MARKER_ID, "deploy_key": deploy_key},
+        upsert=True,
+    )

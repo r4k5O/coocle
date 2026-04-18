@@ -317,7 +317,13 @@
         const data = await res.json();
 
         document.getElementById("summaryGrid").innerHTML = [
-          renderSummaryCard("Indexierte Seiten", data.summary.indexed_count, "Archivierte HTML-Seiten"),
+          renderSummaryCard(
+            "Indexierte Seiten",
+            data.summary.indexed_count,
+            data.astra?.document_count_estimate && data.summary.sqlite_indexed_count !== data.summary.indexed_count
+              ? `SQLite ${data.summary.sqlite_indexed_count} · Astra ~${data.astra.document_count_estimate}`
+              : "Archivierte HTML-Seiten"
+          ),
           renderSummaryCard("Warteschlange", data.summary.queued_count, "Noch zu crawlende URLs"),
           renderSummaryCard("Aktive Scans", data.summary.active_scans, data.crawler_status?.message || "Crawlerstatus"),
           renderSummaryCard(
