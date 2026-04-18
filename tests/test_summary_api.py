@@ -355,3 +355,36 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(payload["indexed_pages"][0]["url"], "https://example.com/python")
         self.assertEqual(payload["queued_pages"][0]["url"], "https://example.com/queued")
         self.assertEqual(payload["current_scans"][0]["url"], "https://example.com/live")
+
+    def test_pages_overview_includes_pending_batch_entries(self) -> None:
+        self.main_module.app.state.crawl_status = {
+            "state": "saved",
+            "current_url": "https://example.com/live-batch",
+            "current_depth": 1,
+            "message": "Seite indexiert",
+            "pages_done": 2,
+            "pages_saved": 2,
+            "pending_indexed_count": 1,
+            "pending_indexed_pages": [
+                {
+                    "url": "https://example.com/live-batch",
+                    "title": "Live Batch",
+                    "excerpt": "Noch nicht geflusht.",
+                    "fetched_at": "2026-04-18T09:00:00",
+                    "status_code": 200,
+                    "content_type": "text/html",
+                    "language": "de",
+                    "storage_state": "pending_batch",
+                }
+            ],
+            "updated_at": "2026-04-18T09:00:00",
+        }
+
+        response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["indexed_count"], 2)
+        self.assertEqual(payload["summary"]["pending_indexed_count"], 1)
+        self.assertEqual(payload["indexed_pages"][0]["url"], "https://example.com/live-batch")
+        self.assertEqual(payload["indexed_pages"][0]["storage_state"], "pending_batch")

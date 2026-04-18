@@ -209,6 +209,8 @@ async def lifespan(fastapi_app: FastAPI):
         "message": "Crawler inaktiv",
         "pages_done": 0,
         "pages_saved": 0,
+        "pending_indexed_pages": [],
+        "pending_indexed_count": 0,
         "skipped": 0,
         "errors": 0,
         "updated_at": datetime.now().isoformat(),
@@ -454,6 +456,47 @@ def api_pages_overview(
     ).fetchall()
 
     crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
+    pending_indexed_pages = [
+        page
+        for page in (crawl_status.get("pending_indexed_pages") or [])
+        if isinstance(page, dict) and page.get("url")
+    ]
+    persisted_indexed_pages = [
+        {
+            "url": row["url"],
+            "title": row["title"] or row["url"],
+            "excerpt": _excerpt(row["content"]),
+            "fetched_at": row["fetched_at"],
+            "status_code": row["status_code"],
+            "content_type": row["content_type"],
+            "language": row["language"],
+        }
+        for row in indexed_rows
+    ]
+
+    pending_urls = list({str(page["url"]) for page in pending_indexed_pages})
+    existing_pending_urls: set[str] = set()
+    if pending_urls:
+        placeholders = ", ".join("?" for _ in pending_urls)
+        existing_pending_urls = {
+            str(row["url"])
+            for row in conn.execute(
+                f"SELECT url FROM pages WHERE url IN ({placeholders})",
+                pending_urls,
+            ).fetchall()
+        }
+
+    indexed_pages: list[dict] = []
+    indexed_seen_urls: set[str] = set()
+    for item in pending_indexed_pages + persisted_indexed_pages:
+        url = str(item["url"])
+        if url in indexed_seen_urls:
+            continue
+        indexed_seen_urls.add(url)
+        indexed_pages.append(item)
+        if len(indexed_pages) >= indexed_limit:
+            break
+
     current_scans = []
     current_url = crawl_status.get("current_url")
     if current_url:
@@ -476,25 +519,15 @@ def api_pages_overview(
 
     return {
         "summary": {
-            "indexed_count": indexed_count,
+            "indexed_count": indexed_count + len(set(pending_urls) - existing_pending_urls),
             "queued_count": queued_count,
             "active_scans": len(current_scans),
+            "pending_indexed_count": len(set(pending_urls)),
         },
         "astra": astra_status,
         "crawler_status": crawl_status,
         "current_scans": current_scans,
-        "indexed_pages": [
-            {
-                "url": row["url"],
-                "title": row["title"] or row["url"],
-                "excerpt": _excerpt(row["content"]),
-                "fetched_at": row["fetched_at"],
-                "status_code": row["status_code"],
-                "content_type": row["content_type"],
-                "language": row["language"],
-            }
-            for row in indexed_rows
-        ],
+        "indexed_pages": indexed_pages,
         "queued_pages": [
             {
                 "url": row["url"],
@@ -504,83 +537,6 @@ def api_pages_overview(
             }
             for row in queue_rows
         ],
-    }
-
-
-@app.get("/api/pages/overview")
-def api_pages_overview(
-    request: Request,
-    indexed_limit: Annotated[int, Query(ge=1, le=50)] = 24,
-    queue_limit: Annotated[int, Query(ge=1, le=50)] = 24,
-):
-    conn = _conn_from_request(request)
-    indexed_rows = conn.execute(
-        """
-        SELECT url, title, content, fetched_at, status_code, content_type, language
-        FROM pages
-        ORDER BY datetime(COALESCE(fetched_at, '1970-01-01T00:00:00')) DESC, id DESC
-        LIMIT ?
-        """,
-        (indexed_limit,),
-    ).fetchall()
-    queue_rows = conn.execute(
-        """
-        SELECT url, depth, discovered_at, last_error
-        FROM crawl_queue
-        ORDER BY datetime(COALESCE(discovered_at, '1970-01-01T00:00:00')) ASC, url ASC
-        LIMIT ?
-        """,
-        (queue_limit,),
-    ).fetchall()
-
-    indexed_pages = [
-        {
-            "url": row["url"],
-            "title": row["title"] or row["url"],
-            "excerpt": _excerpt(row["content"]),
-            "fetched_at": row["fetched_at"],
-            "status_code": row["status_code"],
-            "content_type": row["content_type"],
-            "language": row["language"],
-        }
-        for row in indexed_rows
-    ]
-    queued_pages = [
-        {
-            "url": row["url"],
-            "depth": row["depth"],
-            "discovered_at": row["discovered_at"],
-            "last_error": row["last_error"],
-        }
-        for row in queue_rows
-    ]
-
-    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
-    current_scans = []
-    if crawl_status.get("current_url"):
-        current_scans.append(
-            {
-                "url": crawl_status.get("current_url"),
-                "depth": crawl_status.get("current_depth"),
-                "state": crawl_status.get("state"),
-                "message": crawl_status.get("message"),
-                "updated_at": crawl_status.get("updated_at"),
-            }
-        )
-
-    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
-    queued_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-
-    return {
-        "summary": {
-            "indexed_count": indexed_count,
-            "queued_count": queued_count,
-            "active_scans": len(current_scans),
-        },
-        "current_scans": current_scans,
-        "indexed_pages": indexed_pages,
-        "queued_pages": queued_pages,
-        "crawler_status": crawl_status,
     }
 
 

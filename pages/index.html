@@ -264,6 +264,7 @@
       }
 
       function renderIndexedItem(item) {
+        const storageState = item.storage_state === "pending_batch" ? " · Batch ausstehend" : "";
         return `
           <li class="item">
             <div class="itemTop">
@@ -274,7 +275,7 @@
             </div>
             <div class="itemExcerpt">${escapeHtml(item.excerpt || "Kein Auszug vorhanden.")}</div>
             <div class="itemMeta" style="margin-top:8px;">
-              ${escapeHtml(item.content_type || "unbekannter Typ")} · Status ${escapeHtml(item.status_code ?? "n/a")} · ${escapeHtml(item.language || "sprache unbekannt")}
+              ${escapeHtml(item.content_type || "unbekannter Typ")} · Status ${escapeHtml(item.status_code ?? "n/a")} · ${escapeHtml(item.language || "sprache unbekannt")}${escapeHtml(storageState)}
             </div>
           </li>
         `;
@@ -326,7 +327,10 @@
           ),
         ].join("");
 
-        document.getElementById("indexedCountLabel").textContent = `${data.indexed_pages.length} Einträge sichtbar`;
+        const pendingIndexedCount = data.summary.pending_indexed_count || 0;
+        document.getElementById("indexedCountLabel").textContent = pendingIndexedCount
+          ? `${data.indexed_pages.length} Einträge sichtbar · ${pendingIndexedCount} im aktuellen Batch`
+          : `${data.indexed_pages.length} Einträge sichtbar`;
         document.getElementById("queueCountLabel").textContent = `${data.queued_pages.length} Einträge sichtbar`;
         document.getElementById("currentCountLabel").textContent = `${data.current_scans.length} aktiv`;
 

@@ -82,6 +82,13 @@ def _extract_links(base_url: str, html: str) -> list[str]:
     return out
 
 
+def _excerpt(text: str, limit: int = 220) -> str:
+    value = (text or "").strip()
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(1, limit - 1)].rstrip()}…"
+
+
 @dataclass(frozen=True)
 class CrawlConfig:
     user_agent: str = "CoocleBot/0.1"
@@ -184,6 +191,7 @@ async def crawl_loop(
         skipped = 0
         errors = 0
         pending_page_rows: list[tuple[object, ...]] = []
+        pending_indexed_pages: list[dict[str, object]] = []
         pending_queue_rows: list[tuple[str, int, str]] = []
         pending_astra_docs: list[dict[str, object]] = []
         processed_queue_urls: list[str] = []
@@ -196,6 +204,8 @@ async def crawl_loop(
                 await result
 
         async def flush_pending_writes() -> None:
+            had_pending_indexed_pages = bool(pending_indexed_pages)
+
             if pending_page_rows:
                 db.upsert_pages(conn, pending_page_rows, batch_size=batch_size)
                 pending_page_rows.clear()
@@ -216,6 +226,10 @@ async def crawl_loop(
             if pending_queue_rows:
                 db.upsert_queue(conn, pending_queue_rows, batch_size=batch_size)
                 pending_queue_rows.clear()
+
+            if had_pending_indexed_pages:
+                pending_indexed_pages.clear()
+                await publish_status(pending_indexed_pages=[], pending_indexed_count=0)
 
         while not stop_event.is_set():
             if cfg.max_pages > 0 and pages_done >= cfg.max_pages:
@@ -408,6 +422,18 @@ async def crawl_loop(
                             lang,
                         )
                     )
+                    pending_indexed_pages.append(
+                        {
+                            "url": url,
+                            "title": title or url,
+                            "excerpt": _excerpt(text),
+                            "fetched_at": fetched_at,
+                            "status_code": int(r.status_code),
+                            "content_type": ct[:200],
+                            "language": lang,
+                            "storage_state": "pending_batch",
+                        }
+                    )
 
                     if astra_col:
                         pending_astra_docs.append(
@@ -433,6 +459,8 @@ async def crawl_loop(
                         message="Seite indexiert",
                         pages_done=pages_done,
                         pages_saved=pages_saved,
+                        pending_indexed_pages=list(pending_indexed_pages),
+                        pending_indexed_count=len(pending_indexed_pages),
                         skipped=skipped,
                         errors=errors,
                     )
