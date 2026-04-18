@@ -121,7 +121,7 @@ node tests/app.test.js
 
 `render.yaml` ist jetzt so konfiguriert, dass Render den Service erst deployed, wenn die GitHub-Checks auf `main` erfolgreich durchgelaufen sind.
 
-Zusätzlich setzt die Render-Konfiguration `COOCLE_RESET_DATA_ON_START=1`. Dadurch wird beim Start des neuen Service-Prozesses die SQLite-Datenbank geleert und, falls `USE_ASTRA=true` aktiv ist, auch die AstraDB-Collection komplett geleert.
+Zusätzlich setzt die Render-Konfiguration `COOCLE_RESET_DATA_ON_START=1`. Dadurch wird beim Start des neuen Service-Prozesses die SQLite-Datenbank geleert und, sobald Astra-Credentials vorhanden sind, auch die AstraDB-Collection komplett geleert.
 
 Wichtig:
 

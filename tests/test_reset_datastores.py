@@ -48,6 +48,27 @@ class ResetRuntimeDataTests(unittest.TestCase):
 
 
 class AstraResetTests(unittest.TestCase):
+    def test_has_astra_credentials_requires_token_and_endpoint(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ASTRA_DB_APPLICATION_TOKEN": "AstraCS:token",
+                "ASTRA_DB_API_ENDPOINT": "https://example-astra.apps.astra.datastax.com",
+            },
+            clear=False,
+        ):
+            self.assertTrue(astra_utils.has_astra_credentials())
+
+        with patch.dict(
+            os.environ,
+            {
+                "ASTRA_DB_APPLICATION_TOKEN": "",
+                "ASTRA_DB_API_ENDPOINT": "https://example-astra.apps.astra.datastax.com",
+            },
+            clear=False,
+        ):
+            self.assertFalse(astra_utils.has_astra_credentials())
+
     def test_clear_documents_uses_atomic_empty_filter(self) -> None:
         class FakeCollection:
             def __init__(self) -> None:
@@ -69,7 +90,7 @@ class AstraResetTests(unittest.TestCase):
 
 
 class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_startup_reset_clears_sqlite_and_astra_when_enabled(self) -> None:
+    async def test_startup_reset_clears_sqlite_and_astra_when_credentials_exist(self) -> None:
         from backend import main as imported_main
 
         main = reload(imported_main)
@@ -79,7 +100,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             main.dbmod,
             "reset_runtime_data",
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
-        ) as reset_db, patch.object(main.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+        ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
             main.astra_utils,
             "get_astra_collection",
             return_value=fake_collection,
@@ -105,7 +126,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             main.dbmod,
             "reset_runtime_data",
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
-        ) as reset_db, patch.object(main.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+        ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
             main.astra_utils,
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
@@ -130,7 +151,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             main.dbmod,
             "reset_runtime_data",
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
-        ), patch.object(main.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+        ), patch.object(main.astra_utils, "has_astra_credentials", return_value=True), patch.object(
             main.astra_utils,
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
@@ -140,6 +161,25 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                     await main._reset_datastores_on_start(object())
 
         log_exception.assert_called_once()
+
+    async def test_startup_reset_skips_astra_without_credentials(self) -> None:
+        from backend import main as imported_main
+
+        main = reload(imported_main)
+
+        with patch.dict(os.environ, {"COOCLE_RESET_DATA_ON_START": "1"}, clear=False), patch.object(
+            main.dbmod,
+            "reset_runtime_data",
+            return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
+        ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=False), patch.object(
+            main.astra_utils,
+            "get_astra_collection",
+        ) as get_collection:
+            with patch.object(main.logger, "warning"):
+                await main._reset_datastores_on_start(object())
+
+        reset_db.assert_called_once()
+        get_collection.assert_not_called()
 
     async def test_startup_reset_skips_everything_when_disabled(self) -> None:
         from backend import main as imported_main

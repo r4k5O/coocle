@@ -68,6 +68,13 @@ def get_astra_collection():
         logger.warning("AstraDB unavailable: %s", e)
         return None
 
+
+def has_astra_credentials() -> bool:
+    token = os.environ.get("ASTRA_DB_APPLICATION_TOKEN", "").strip()
+    endpoint = os.environ.get("ASTRA_DB_API_ENDPOINT", "").strip()
+    return bool(token and endpoint)
+
+
 def is_astra_enabled() -> bool:
     return os.environ.get("USE_ASTRA", "false").lower() == "true"
 

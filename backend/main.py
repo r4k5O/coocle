@@ -212,7 +212,7 @@ async def _reset_datastores_on_start(conn) -> None:
             raise
         return
 
-    if not astra_utils.is_astra_enabled():
+    if not astra_utils.has_astra_credentials():
         return
 
     try:
