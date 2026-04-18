@@ -18,6 +18,7 @@ class SummaryApiTests(unittest.TestCase):
         self.prev_use_astra = os.environ.get("USE_ASTRA")
         self.prev_start_crawler = os.environ.get("COOCLE_START_CRAWLER")
         self.prev_prewarm_astra = os.environ.get("COOCLE_PREWARM_ASTRA")
+        self.prev_reset_data_on_start = os.environ.get("COOCLE_RESET_DATA_ON_START")
         self.prev_api_rate_limit = os.environ.get("COOCLE_API_RATE_LIMIT")
         self.prev_api_rate_window = os.environ.get("COOCLE_API_RATE_WINDOW_S")
         self.prev_summary_rate_limit = os.environ.get("COOCLE_SUMMARY_RATE_LIMIT")
@@ -26,6 +27,7 @@ class SummaryApiTests(unittest.TestCase):
         os.environ["USE_ASTRA"] = "false"
         os.environ["COOCLE_START_CRAWLER"] = "0"
         os.environ["COOCLE_PREWARM_ASTRA"] = "0"
+        os.environ["COOCLE_RESET_DATA_ON_START"] = "0"
         os.environ["COOCLE_API_RATE_LIMIT"] = "100"
         os.environ["COOCLE_API_RATE_WINDOW_S"] = "60"
         os.environ["COOCLE_SUMMARY_RATE_LIMIT"] = "10"
@@ -72,6 +74,10 @@ class SummaryApiTests(unittest.TestCase):
             os.environ.pop("COOCLE_PREWARM_ASTRA", None)
         else:
             os.environ["COOCLE_PREWARM_ASTRA"] = self.prev_prewarm_astra
+        if self.prev_reset_data_on_start is None:
+            os.environ.pop("COOCLE_RESET_DATA_ON_START", None)
+        else:
+            os.environ["COOCLE_RESET_DATA_ON_START"] = self.prev_reset_data_on_start
         if self.prev_api_rate_limit is None:
             os.environ.pop("COOCLE_API_RATE_LIMIT", None)
         else:

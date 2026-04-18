@@ -33,6 +33,10 @@ const ollamaKeyInput = doc?.getElementById("ollamaKey");
 const ollamaHostInput = doc?.getElementById("ollamaHost");
 const creditStatus = doc?.getElementById("creditStatus");
 const DEFAULT_SEARCH_MODE = "hybrid";
+const prefersReducedMotion =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 if (apiLabel) {
   apiLabel.textContent = `${API_BASE || "(same origin)"}${SEARCH_PATH}`;
@@ -41,6 +45,8 @@ if (apiLabel) {
 let activeController = null;
 let liveTimer = null;
 let lastQuery = "";
+let resultsTransitionTimer = null;
+let resultsTransitionFrame = null;
 
 class NoBackendError extends Error {
   constructor(message) {
@@ -273,14 +279,70 @@ function render(results, q) {
   }
 }
 
-function showResultsView(q) {
+function clearResultsTransition() {
+  if (resultsTransitionFrame && typeof window !== "undefined") {
+    window.cancelAnimationFrame(resultsTransitionFrame);
+  }
+  resultsTransitionFrame = null;
+  if (resultsTransitionTimer && typeof window !== "undefined") {
+    window.clearTimeout(resultsTransitionTimer);
+  }
+  resultsTransitionTimer = null;
+}
+
+function showResultsView(q, options = {}) {
+  const { animate = true, scroll = true } = options;
   if (topbar) topbar.hidden = false;
-  if (home) home.hidden = true;
   if (resultsSection) resultsSection.hidden = false;
   if (inputTop && typeof q === "string") inputTop.value = q;
+
+  const body = doc?.body;
+  if (!body) {
+    if (home) home.hidden = true;
+    return;
+  }
+
+  clearResultsTransition();
+
+  const shouldAnimate = Boolean(animate && !prefersReducedMotion && home && !home.hidden);
+
+  const scrollToResults = () => {
+    if (!scroll || !resultsSection) return;
+    resultsSection.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+
+  if (!shouldAnimate) {
+    body.classList.add("is-results-mode");
+    body.classList.remove("is-results-transition");
+    if (home) home.hidden = true;
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(scrollToResults);
+    } else {
+      scrollToResults();
+    }
+    return;
+  }
+
+  resultsTransitionFrame = window.requestAnimationFrame(() => {
+    body.classList.add("is-results-mode", "is-results-transition");
+    resultsTransitionFrame = null;
+  });
+  resultsTransitionTimer = window.setTimeout(() => {
+    body.classList.remove("is-results-transition");
+    if (home) home.hidden = true;
+    scrollToResults();
+    clearResultsTransition();
+  }, 560);
 }
 
 function showHomeView() {
+  clearResultsTransition();
+  if (doc?.body) {
+    doc.body.classList.remove("is-results-mode", "is-results-transition");
+  }
   if (topbar) topbar.hidden = true;
   if (home) home.hidden = false;
   if (resultsSection) resultsSection.hidden = true;
@@ -364,7 +426,8 @@ function renderSummaryResponse(payload) {
   return status;
 }
 
-async function search(q, summarize = false) {
+async function search(q, summarize = false, options = {}) {
+  const { animate = true, scroll = true } = options;
   const query = String(q || "").trim();
   if (!query) {
     if (summarize) {
@@ -392,7 +455,7 @@ async function search(q, summarize = false) {
   btn.disabled = true;
   if (btnTop) btnTop.disabled = true;
   setStatus(summarize ? "KI fasst zusammen…" : "suche…");
-  showResultsView(query);
+  showResultsView(query, { animate, scroll });
 
   if (summarize) {
     renderSummaryLoading();
@@ -514,7 +577,7 @@ function setLive(enabled) {
     const q = String(lastQuery || "").trim();
     if (!q) return;
     // refresh silently; status will update timestamp/metrics naturally
-    search(q);
+    search(q, false, { animate: false, scroll: false });
   }, 2000);
 }
 
@@ -656,7 +719,7 @@ if (doc) {
       setStatus("Suche zuerst nach etwas, bevor du die KI-Zusammenfassung nutzt.");
       return;
     }
-    search(q, true);
+    search(q, true, { animate: false, scroll: false });
   });
 
   settingsBtn?.addEventListener("click", () => {

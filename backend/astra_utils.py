@@ -8,6 +8,7 @@ from typing import Iterable
 
 logger = logging.getLogger(__name__)
 ASTRA_WRITE_BATCH_SIZE = 100
+ASTRA_DELETE_TIMEOUT_MS = 120_000
 
 
 def _chunked(items: list, chunk_size: int):
@@ -93,3 +94,11 @@ def upsert_documents(collection, documents: Iterable[dict], *, batch_size: int =
             except Exception:
                 logger.debug("AstraDB insertion error for %s", doc.get("_id"), exc_info=True)
     return upserted
+
+
+def clear_documents(collection, *, general_method_timeout_ms: int = ASTRA_DELETE_TIMEOUT_MS) -> int:
+    if collection is None:
+        return 0
+
+    result = collection.delete_many({}, general_method_timeout_ms=general_method_timeout_ms)
+    return int(getattr(result, "deleted_count", 0) or 0)

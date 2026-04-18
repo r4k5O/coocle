@@ -3,6 +3,7 @@ services:
     name: coocle
     runtime: python
     plan: free
+    autoDeployTrigger: checksPass
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/stats
@@ -14,4 +15,6 @@ services:
       - key: COOCLE_PREWARM_ASTRA
         value: "0"
       - key: COOCLE_START_CRAWLER
+        value: "1"
+      - key: COOCLE_RESET_DATA_ON_START
         value: "1"

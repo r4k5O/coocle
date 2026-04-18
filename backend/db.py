@@ -190,3 +190,16 @@ def upsert_pages(
         conn.commit()
     return len(page_rows)
 
+
+def reset_runtime_data(conn: sqlite3.Connection) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table in ("pages", "crawl_queue", "summarization_usage"):
+        row = conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
+        counts[table] = int(row["count"] if row else 0)
+
+    conn.execute("DELETE FROM pages")
+    conn.execute("DELETE FROM crawl_queue")
+    conn.execute("DELETE FROM summarization_usage")
+    conn.commit()
+    return counts
+

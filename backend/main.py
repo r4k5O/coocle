@@ -193,11 +193,39 @@ def _excerpt(text: str | None, limit: int = 220) -> str:
     return f"{value[: max(1, limit - 1)].rstrip()}…"
 
 
+async def _reset_datastores_on_start(conn) -> None:
+    if not _truthy_env("COOCLE_RESET_DATA_ON_START", default=False):
+        return
+
+    cleared = dbmod.reset_runtime_data(conn)
+    logger.warning(
+        "Startup reset cleared SQLite data before serving traffic: pages=%s queue=%s usage=%s",
+        cleared["pages"],
+        cleared["crawl_queue"],
+        cleared["summarization_usage"],
+    )
+
+    if not astra_utils.is_astra_enabled():
+        return
+
+    astra_collection = await asyncio.to_thread(astra_utils.get_astra_collection)
+    if not astra_collection:
+        raise RuntimeError("AstraDB reset requested on startup, but the collection could not be opened.")
+
+    deleted = await asyncio.to_thread(astra_utils.clear_documents, astra_collection)
+    logger.warning(
+        "Startup reset cleared AstraDB collection %s: %s document(s) removed",
+        getattr(astra_collection, "full_name", "unknown"),
+        deleted,
+    )
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     astra_utils.reset_astra_cache()
     fastapi_app.state.conn = dbmod.connect(_db_path())
     dbmod.init_db(fastapi_app.state.conn)
+    await _reset_datastores_on_start(fastapi_app.state.conn)
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
