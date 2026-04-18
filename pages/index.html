@@ -310,23 +310,27 @@
       }
 
       function formatIndexedSummaryValue(summary) {
-        if (summary?.indexed_count_is_estimate) {
-          return `~${summary.indexed_count}`;
-        }
         return String(summary?.indexed_count ?? 0);
       }
 
       function buildIndexedSummaryMeta(data) {
         const sqliteCount = data.summary?.sqlite_indexed_count ?? 0;
         const exactAstraCount = data.astra?.document_count_exact;
+        const liveAstraCount = data.astra?.document_count_live;
         const estimateAstraCount = data.astra?.document_count_estimate;
         const source = data.summary?.indexed_count_source;
 
         if (source === "astra_exact" && exactAstraCount != null && sqliteCount !== data.summary.indexed_count) {
-          return `SQLite ${sqliteCount} · Astra exakt ${exactAstraCount}`;
+          return `SQLite ${sqliteCount} · Astra live ${exactAstraCount}`;
+        }
+        if (source === "astra_live_scan" && liveAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+          return `SQLite ${sqliteCount} · Astra live ${liveAstraCount}`;
         }
         if (source === "astra_estimate" && estimateAstraCount != null && sqliteCount !== data.summary.indexed_count) {
           return `SQLite ${sqliteCount} · Astra geschaetzt ~${estimateAstraCount}`;
+        }
+        if (data.astra?.connected && source === "sqlite") {
+          return `SQLite ${sqliteCount} · Astra Livezaehler aktuell nicht verfuegbar`;
         }
         return "Archivierte HTML-Seiten";
       }

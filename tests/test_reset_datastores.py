@@ -91,6 +91,21 @@ class AstraResetTests(unittest.TestCase):
     def test_estimated_document_count_returns_none_for_missing_collection(self) -> None:
         self.assertIsNone(astra_utils.estimated_document_count(None))
 
+    def test_live_document_count_counts_cursor_entries(self) -> None:
+        class FakeCollection:
+            def find(self, filter, projection=None):
+                self.filter = filter
+                self.projection = projection
+                return iter([{"_id": "a"}, {"_id": "b"}, {"_id": "c"}])
+
+        collection = FakeCollection()
+
+        count = astra_utils.live_document_count(collection)
+
+        self.assertEqual(count, 3)
+        self.assertEqual(collection.filter, {})
+        self.assertEqual(collection.projection, {"_id": True})
+
     def test_reset_marker_roundtrip_uses_fixed_document_id(self) -> None:
         class FakeCollection:
             def __init__(self) -> None:

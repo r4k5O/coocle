@@ -184,6 +184,20 @@ def exact_document_count(
         return None
 
 
+def live_document_count(collection) -> int | None:
+    if collection is None:
+        return None
+
+    try:
+        count = 0
+        for _doc in collection.find({}, projection={"_id": True}):
+            count += 1
+        return count
+    except Exception:
+        logger.debug("AstraDB live scan count failed", exc_info=True)
+        return None
+
+
 def get_reset_marker(meta_collection):
     if meta_collection is None:
         return None

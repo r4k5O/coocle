@@ -204,31 +204,49 @@ def _astra_document_count_exact(collection) -> int | None:
     return astra_utils.exact_document_count(collection)
 
 
+def _astra_document_count_live(collection) -> int | None:
+    return astra_utils.live_document_count(collection)
+
+
 def _astra_document_count_estimate(collection) -> int | None:
     return astra_utils.estimated_document_count(collection)
 
 
-def _astra_count_snapshot(request: Request) -> dict[str, object]:
-    now = time.monotonic()
-    cached = getattr(request.app.state, "astra_count_cache", None)
-    if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
-        snapshot = cached.get("snapshot")
-        if isinstance(snapshot, dict):
-            return dict(snapshot)
+def _astra_count_snapshot(
+    request: Request,
+    *,
+    live: bool = False,
+    allow_estimate: bool = True,
+) -> dict[str, object]:
+    if not live:
+        now = time.monotonic()
+        cached = getattr(request.app.state, "astra_count_cache", None)
+        if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
+            snapshot = cached.get("snapshot")
+            if isinstance(snapshot, dict):
+                return dict(snapshot)
 
     astra_collection = _astra_collection_for_runtime()
     exact_count = _astra_document_count_exact(astra_collection)
+    live_count = None
     estimate_count = None
     effective_count = exact_count
     count_is_estimate = False
     count_source = "astra_exact" if exact_count is not None else "unavailable"
 
+    if effective_count is None and live:
+        live_count = _astra_document_count_live(astra_collection)
+        if live_count is not None:
+            effective_count = live_count
+            count_source = "astra_live_scan"
+
     if effective_count is None:
-        estimate_count = _astra_document_count_estimate(astra_collection)
-        if estimate_count is not None:
-            effective_count = estimate_count
-            count_is_estimate = True
-            count_source = "astra_estimate"
+        if allow_estimate:
+            estimate_count = _astra_document_count_estimate(astra_collection)
+            if estimate_count is not None:
+                effective_count = estimate_count
+                count_is_estimate = True
+                count_source = "astra_estimate"
 
     snapshot = {
         "enabled": astra_utils.is_astra_enabled(),
@@ -237,14 +255,17 @@ def _astra_count_snapshot(request: Request) -> dict[str, object]:
         "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
         "document_count": effective_count,
         "document_count_exact": exact_count,
+        "document_count_live": live_count,
         "document_count_estimate": estimate_count,
         "count_is_estimate": count_is_estimate,
         "count_source": count_source,
+        "count_is_live": bool(effective_count is not None and not count_is_estimate),
     }
-    request.app.state.astra_count_cache = {
-        "expires_at": now + ASTRA_COUNT_CACHE_TTL_S,
-        "snapshot": snapshot,
-    }
+    if not live:
+        request.app.state.astra_count_cache = {
+            "expires_at": time.monotonic() + ASTRA_COUNT_CACHE_TTL_S,
+            "snapshot": snapshot,
+        }
     return dict(snapshot)
 
 
@@ -568,7 +589,7 @@ def api_stats(request: Request):
     conn = _conn_from_request(request)
     sqlite_pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
     queued = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-    astra_status = _astra_count_snapshot(request)
+    astra_status = _astra_count_snapshot(request, live=False, allow_estimate=True)
     astra_count = astra_status.get("document_count")
     pages = max(int(sqlite_pages), int(astra_count or 0))
     return {
@@ -673,7 +694,7 @@ def api_pages_overview(
                 }
             )
 
-    astra_status = _astra_count_snapshot(request)
+    astra_status = _astra_count_snapshot(request, live=True, allow_estimate=False)
     astra_count = astra_status.get("document_count")
 
     visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)

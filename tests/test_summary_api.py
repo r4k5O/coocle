@@ -420,6 +420,10 @@ class SummaryApiTests(unittest.TestCase):
             return_value=fake_collection,
         ), patch.object(self.main_module.astra_utils, "exact_document_count", return_value=5471), patch.object(
             self.main_module.astra_utils,
+            "live_document_count",
+            return_value=None,
+        ), patch.object(
+            self.main_module.astra_utils,
             "estimated_document_count",
             return_value=6000,
         ):
@@ -445,11 +449,12 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(overview_payload["summary"]["indexed_count_source"], "astra_exact")
         self.assertEqual(overview_payload["astra"]["document_count"], 5471)
         self.assertEqual(overview_payload["astra"]["document_count_exact"], 5471)
+        self.assertIsNone(overview_payload["astra"]["document_count_live"])
         self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
         self.assertFalse(overview_payload["astra"]["count_is_estimate"])
         self.assertEqual(overview_payload["astra"]["count_source"], "astra_exact")
 
-    def test_stats_and_overview_fall_back_to_astra_estimate_when_exact_count_unavailable(self) -> None:
+    def test_stats_fall_back_to_astra_estimate_when_exact_count_unavailable(self) -> None:
         fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
 
         with patch.object(self.main_module.astra_utils, "has_astra_credentials", return_value=True), patch.object(
@@ -458,17 +463,18 @@ class SummaryApiTests(unittest.TestCase):
             return_value=fake_collection,
         ), patch.object(self.main_module.astra_utils, "exact_document_count", return_value=None), patch.object(
             self.main_module.astra_utils,
+            "live_document_count",
+            return_value=None,
+        ), patch.object(
+            self.main_module.astra_utils,
             "estimated_document_count",
             return_value=5471,
         ):
             stats_response = self.client.get("/api/stats")
-            overview_response = self.client.get("/api/pages/overview")
 
         self.assertEqual(stats_response.status_code, 200)
-        self.assertEqual(overview_response.status_code, 200)
 
         stats_payload = stats_response.json()
-        overview_payload = overview_response.json()
 
         self.assertEqual(stats_payload["sqlite_pages"], 1)
         self.assertEqual(stats_payload["astra_pages"], 5471)
@@ -477,12 +483,69 @@ class SummaryApiTests(unittest.TestCase):
         self.assertTrue(stats_payload["astra_pages_is_estimate"])
         self.assertEqual(stats_payload["astra_count_source"], "astra_estimate")
         self.assertEqual(stats_payload["pages"], 5471)
+
+    def test_pages_overview_uses_live_scan_when_exact_count_unavailable(self) -> None:
+        fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
+
+        with patch.object(self.main_module.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            self.main_module.astra_utils,
+            "get_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(self.main_module.astra_utils, "exact_document_count", return_value=None), patch.object(
+            self.main_module.astra_utils,
+            "live_document_count",
+            return_value=5471,
+        ), patch.object(
+            self.main_module.astra_utils,
+            "estimated_document_count",
+            return_value=6000,
+        ):
+            overview_response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(overview_response.status_code, 200)
+
+        overview_payload = overview_response.json()
+
         self.assertEqual(overview_payload["summary"]["sqlite_indexed_count"], 1)
         self.assertEqual(overview_payload["summary"]["indexed_count"], 5471)
-        self.assertTrue(overview_payload["summary"]["indexed_count_is_estimate"])
-        self.assertEqual(overview_payload["summary"]["indexed_count_source"], "astra_estimate")
+        self.assertFalse(overview_payload["summary"]["indexed_count_is_estimate"])
+        self.assertEqual(overview_payload["summary"]["indexed_count_source"], "astra_live_scan")
         self.assertEqual(overview_payload["astra"]["document_count"], 5471)
         self.assertIsNone(overview_payload["astra"]["document_count_exact"])
-        self.assertEqual(overview_payload["astra"]["document_count_estimate"], 5471)
-        self.assertTrue(overview_payload["astra"]["count_is_estimate"])
-        self.assertEqual(overview_payload["astra"]["count_source"], "astra_estimate")
+        self.assertEqual(overview_payload["astra"]["document_count_live"], 5471)
+        self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
+        self.assertFalse(overview_payload["astra"]["count_is_estimate"])
+        self.assertEqual(overview_payload["astra"]["count_source"], "astra_live_scan")
+
+    def test_pages_overview_does_not_use_estimate_for_live_counter(self) -> None:
+        fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
+
+        with patch.object(self.main_module.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            self.main_module.astra_utils,
+            "get_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(self.main_module.astra_utils, "exact_document_count", return_value=None), patch.object(
+            self.main_module.astra_utils,
+            "live_document_count",
+            return_value=None,
+        ), patch.object(
+            self.main_module.astra_utils,
+            "estimated_document_count",
+            return_value=5471,
+        ):
+            overview_response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(overview_response.status_code, 200)
+
+        overview_payload = overview_response.json()
+
+        self.assertEqual(overview_payload["summary"]["sqlite_indexed_count"], 1)
+        self.assertEqual(overview_payload["summary"]["indexed_count"], 1)
+        self.assertFalse(overview_payload["summary"]["indexed_count_is_estimate"])
+        self.assertEqual(overview_payload["summary"]["indexed_count_source"], "sqlite")
+        self.assertIsNone(overview_payload["astra"]["document_count"])
+        self.assertIsNone(overview_payload["astra"]["document_count_exact"])
+        self.assertIsNone(overview_payload["astra"]["document_count_live"])
+        self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
+        self.assertFalse(overview_payload["astra"]["count_is_estimate"])
+        self.assertEqual(overview_payload["astra"]["count_source"], "unavailable")
