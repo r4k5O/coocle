@@ -206,6 +206,7 @@ async def lifespan(fastapi_app: FastAPI):
         "state": "idle",
         "current_url": None,
         "current_depth": None,
+        "current_scans": [],
         "message": "Crawler inaktiv",
         "pages_done": 0,
         "pages_saved": 0,
@@ -246,6 +247,7 @@ async def lifespan(fastapi_app: FastAPI):
                 max_depth=int(os.environ.get("COOCLE_MAX_DEPTH", "10")),
                 delay_s=float(os.environ.get("COOCLE_DELAY_S", "0.6")),
                 same_host_only=os.environ.get("COOCLE_SAME_HOST_ONLY", "0") not in ("0", "false", "no"),
+                max_concurrency=int(os.environ.get("COOCLE_CRAWL_CONCURRENCY", "4")),
             )
             if seeds:
                 fastapi_app.state.crawler_task = asyncio.create_task(
@@ -497,18 +499,23 @@ def api_pages_overview(
         if len(indexed_pages) >= indexed_limit:
             break
 
-    current_scans = []
-    current_url = crawl_status.get("current_url")
-    if current_url:
-        current_scans.append(
-            {
-                "url": current_url,
-                "depth": crawl_status.get("current_depth"),
-                "state": crawl_status.get("state"),
-                "message": crawl_status.get("message"),
-                "updated_at": crawl_status.get("updated_at"),
-            }
-        )
+    current_scans = [
+        scan
+        for scan in (crawl_status.get("current_scans") or [])
+        if isinstance(scan, dict) and scan.get("url")
+    ]
+    if not current_scans:
+        current_url = crawl_status.get("current_url")
+        if current_url:
+            current_scans.append(
+                {
+                    "url": current_url,
+                    "depth": crawl_status.get("current_depth"),
+                    "state": crawl_status.get("state"),
+                    "message": crawl_status.get("message"),
+                    "updated_at": crawl_status.get("updated_at"),
+                }
+            )
 
     astra_collection = astra_utils.get_astra_collection() if astra_utils.is_astra_enabled() else None
     astra_status = {

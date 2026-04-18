@@ -31,6 +31,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-depth", type=int, default=2)
     p.add_argument("--delay", type=float, default=0.6, help="Delay between requests in seconds.")
     p.add_argument(
+        "--concurrency",
+        type=int,
+        default=int(os.environ.get("COOCLE_CRAWL_CONCURRENCY", "4")),
+        help="Number of pages to crawl concurrently (default: 4).",
+    )
+    p.add_argument(
         "--embeddings",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -89,6 +95,7 @@ async def main_async() -> int:
         delay_s=float(args.delay),
         same_host_only=bool(args.same_host_only),
         enable_embeddings=bool(args.embeddings),
+        max_concurrency=max(1, int(args.concurrency)),
     )
 
     await crawl_loop(
