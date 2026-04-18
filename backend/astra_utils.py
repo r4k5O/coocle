@@ -137,6 +137,16 @@ def clear_documents(collection, *, general_method_timeout_ms: int = ASTRA_DELETE
     return int(getattr(result, "deleted_count", 0) or 0)
 
 
+def get_document_by_id(collection, doc_id: str):
+    if collection is None or not doc_id:
+        return None
+    try:
+        return collection.find_one({"_id": doc_id})
+    except Exception:
+        logger.debug("AstraDB document lookup failed for %s", doc_id, exc_info=True)
+        return None
+
+
 def estimated_document_count(collection, *, general_method_timeout_ms: int = ASTRA_COUNT_TIMEOUT_MS) -> int | None:
     if collection is None:
         return None

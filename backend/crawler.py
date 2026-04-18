@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -93,6 +94,49 @@ def _excerpt(text: str, limit: int = 220) -> str:
 def _chunked(items: list, chunk_size: int):
     for start in range(0, len(items), chunk_size):
         yield items[start : start + chunk_size]
+
+
+def _restore_page_row_from_astra_doc(url: str, doc: dict | None) -> tuple[tuple[object, ...], dict[str, object]] | None:
+    if not doc:
+        return None
+
+    content = str(doc.get("content") or "").strip()
+    fetched_at = str(doc.get("fetched_at") or _now_iso())
+    status_code_raw = doc.get("status_code")
+    try:
+        status_code = int(status_code_raw) if status_code_raw is not None else 200
+    except (TypeError, ValueError):
+        status_code = 200
+
+    content_type = str(doc.get("content_type") or "text/html")[:200]
+    language = doc.get("language")
+    title = doc.get("title") or url
+
+    return (
+        (
+            url,
+            title,
+            content,
+            fetched_at,
+            status_code,
+            content_type,
+            None,
+            None,
+            None,
+            None,
+            language,
+        ),
+        {
+            "url": url,
+            "title": str(title),
+            "excerpt": _excerpt(content),
+            "fetched_at": fetched_at,
+            "status_code": status_code,
+            "content_type": content_type,
+            "language": language,
+            "storage_state": "pending_batch",
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -238,6 +282,7 @@ async def crawl_loop(
             _log.info("AstraDB enabled. Collection: %s", astra_col.full_name)
         else:
             _log.error("AstraDB enabled but collection initialization failed.")
+    restore_from_astra = bool(astra_col and os.environ.get("RENDER", "").strip().lower() == "true")
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         pages_done = 0
@@ -328,6 +373,40 @@ async def crawl_loop(
                 )
 
             try:
+                existing_row = conn.execute(
+                    """
+                    SELECT url, title, content, fetched_at, status_code, content_type, language
+                    FROM pages
+                    WHERE url = ?
+                    LIMIT 1
+                    """,
+                    (url,),
+                ).fetchone()
+                if existing_row is not None:
+                    return CrawlTaskResult(
+                        url=url,
+                        depth=depth,
+                        state="skipped",
+                        message="Bereits in SQLite indexiert",
+                        skipped_delta=1,
+                    )
+
+                if restore_from_astra and astra_col:
+                    cached_doc = await asyncio.to_thread(astra_utils.get_document_by_id, astra_col, url)
+                    restored = _restore_page_row_from_astra_doc(url, cached_doc)
+                    if restored is not None:
+                        page_row, indexed_page = restored
+                        return CrawlTaskResult(
+                            url=url,
+                            depth=depth,
+                            state="restored",
+                            message="Aus Astra übernommen",
+                            pages_done_delta=1,
+                            pages_saved_delta=1,
+                            page_row=page_row,
+                            indexed_page=indexed_page,
+                        )
+
                 fetch_state, response = await fetch_response(url)
                 if fetch_state == "blocked":
                     return CrawlTaskResult(
@@ -610,7 +689,7 @@ async def crawl_loop(
                     errors=errors,
                 )
 
-                if result.state == "saved":
+                if result.state in {"saved", "restored"}:
                     _log.info("Saved (%d/%d) depth=%d %s", pages_done, cfg.max_pages, result.depth, result.url)
 
             if processed_queue_urls:
