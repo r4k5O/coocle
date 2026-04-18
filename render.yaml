@@ -11,9 +11,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: USE_ASTRA
-        value: "false"
+        value: "true"
       - key: COOCLE_PREWARM_ASTRA
-        value: "0"
+        value: "1"
       - key: COOCLE_START_CRAWLER
         value: "1"
       - key: COOCLE_RESET_DATA_ON_START

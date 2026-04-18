@@ -69,6 +69,43 @@ class AstraResetTests(unittest.TestCase):
         ):
             self.assertFalse(astra_utils.has_astra_credentials())
 
+    def test_should_use_astra_runtime_respects_flag_or_render_credentials(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "USE_ASTRA": "true",
+                "RENDER": "",
+                "ASTRA_DB_APPLICATION_TOKEN": "",
+                "ASTRA_DB_API_ENDPOINT": "",
+            },
+            clear=False,
+        ):
+            self.assertTrue(astra_utils.should_use_astra_runtime())
+
+        with patch.dict(
+            os.environ,
+            {
+                "USE_ASTRA": "false",
+                "RENDER": "true",
+                "ASTRA_DB_APPLICATION_TOKEN": "AstraCS:token",
+                "ASTRA_DB_API_ENDPOINT": "https://example-astra.apps.astra.datastax.com",
+            },
+            clear=False,
+        ):
+            self.assertTrue(astra_utils.should_use_astra_runtime())
+
+        with patch.dict(
+            os.environ,
+            {
+                "USE_ASTRA": "false",
+                "RENDER": "true",
+                "ASTRA_DB_APPLICATION_TOKEN": "",
+                "ASTRA_DB_API_ENDPOINT": "",
+            },
+            clear=False,
+        ):
+            self.assertFalse(astra_utils.should_use_astra_runtime())
+
     def test_clear_documents_uses_atomic_empty_filter(self) -> None:
         class FakeCollection:
             def __init__(self) -> None:
@@ -91,20 +128,56 @@ class AstraResetTests(unittest.TestCase):
     def test_estimated_document_count_returns_none_for_missing_collection(self) -> None:
         self.assertIsNone(astra_utils.estimated_document_count(None))
 
-    def test_live_document_count_counts_cursor_entries(self) -> None:
+    def test_live_document_count_counts_paginated_pages(self) -> None:
         class FakeCollection:
-            def find(self, filter, projection=None):
-                self.filter = filter
-                self.projection = projection
-                return iter([{"_id": "a"}, {"_id": "b"}, {"_id": "c"}])
+            def __init__(self) -> None:
+                self.calls: list[dict[str, object]] = []
+
+            def find(self, filter, **kwargs):
+                self.calls.append({"filter": filter, **kwargs})
+                state = kwargs.get("initial_page_state")
+                if state == "page-2":
+                    return SimpleNamespace(
+                        fetch_next_page=lambda: SimpleNamespace(
+                            results=[{"_id": "c"}],
+                            next_page_state=None,
+                        )
+                    )
+                return SimpleNamespace(
+                    fetch_next_page=lambda: SimpleNamespace(
+                        results=[{"_id": "a"}, {"_id": "b"}],
+                        next_page_state="page-2",
+                    )
+                )
 
         collection = FakeCollection()
 
         count = astra_utils.live_document_count(collection)
 
         self.assertEqual(count, 3)
-        self.assertEqual(collection.filter, {})
-        self.assertEqual(collection.projection, {"_id": True})
+        self.assertEqual(collection.calls[0]["filter"], {})
+        self.assertEqual(collection.calls[0]["limit"], astra_utils.ASTRA_LIVE_COUNT_PAGE_SIZE)
+
+    def test_live_document_count_falls_back_to_cursor_iteration(self) -> None:
+        class FakeCursor:
+            def __iter__(self):
+                return iter([{"_id": "a"}, {"_id": "b"}, {"_id": "c"}])
+
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def find(self, filter, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return SimpleNamespace(fetch_next_page=lambda: (_ for _ in ()).throw(RuntimeError("paging failed")))
+                return FakeCursor()
+
+        collection = FakeCollection()
+
+        count = astra_utils.live_document_count(collection)
+
+        self.assertEqual(count, 3)
 
     def test_reset_marker_roundtrip_uses_fixed_document_id(self) -> None:
         class FakeCollection:

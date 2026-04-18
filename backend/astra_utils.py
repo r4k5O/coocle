@@ -12,6 +12,8 @@ ASTRA_DELETE_TIMEOUT_MS = 120_000
 ASTRA_COUNT_TIMEOUT_MS = 30_000
 ASTRA_EXACT_COUNT_TIMEOUT_MS = 10_000
 ASTRA_EXACT_COUNT_UPPER_BOUND = 20_000
+ASTRA_LIVE_COUNT_PAGE_SIZE = 1000
+ASTRA_LIVE_COUNT_TIMEOUT_MS = 15_000
 ASTRA_META_COLLECTION_NAME = "coocle_internal"
 ASTRA_RESET_MARKER_ID = "__coocle_reset_marker__"
 
@@ -105,6 +107,12 @@ def is_astra_enabled() -> bool:
     return os.environ.get("USE_ASTRA", "false").lower() == "true"
 
 
+def should_use_astra_runtime() -> bool:
+    if is_astra_enabled():
+        return True
+    return os.environ.get("RENDER", "").strip().lower() == "true" and has_astra_credentials()
+
+
 def reset_astra_cache() -> None:
     get_astra_database.cache_clear()
     get_astra_meta_collection.cache_clear()
@@ -184,13 +192,55 @@ def exact_document_count(
         return None
 
 
-def live_document_count(collection) -> int | None:
+def live_document_count(
+    collection,
+    *,
+    page_size: int = ASTRA_LIVE_COUNT_PAGE_SIZE,
+    request_timeout_ms: int = ASTRA_LIVE_COUNT_TIMEOUT_MS,
+) -> int | None:
     if collection is None:
         return None
 
     try:
         count = 0
-        for _doc in collection.find({}, projection={"_id": True}):
+        next_page_state = None
+
+        while True:
+            find_kwargs: dict[str, object] = {
+                "limit": max(1, int(page_size)),
+                "request_timeout_ms": request_timeout_ms,
+            }
+            if next_page_state:
+                find_kwargs["initial_page_state"] = next_page_state
+
+            try:
+                cursor = collection.find({}, **find_kwargs)
+            except TypeError:
+                find_kwargs.pop("request_timeout_ms", None)
+                cursor = collection.find({}, **find_kwargs)
+
+            page = cursor.fetch_next_page()
+            results = list(getattr(page, "results", []) or [])
+            count += len(results)
+            next_page_state = getattr(page, "next_page_state", None)
+            if not next_page_state:
+                return count
+    except Exception:
+        logger.debug("AstraDB live scan count via page fetch failed", exc_info=True)
+
+    try:
+        count = 0
+        find_kwargs = {
+            "limit": max(1, int(page_size)),
+            "request_timeout_ms": request_timeout_ms,
+        }
+        try:
+            cursor = collection.find({}, **find_kwargs)
+        except TypeError:
+            find_kwargs.pop("request_timeout_ms", None)
+            cursor = collection.find({}, **find_kwargs)
+
+        for _doc in cursor:
             count += 1
         return count
     except Exception:

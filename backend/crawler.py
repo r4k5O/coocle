@@ -258,6 +258,7 @@ async def crawl_loop(
     if not seeds_norm:
         _log.warning("No valid seeds after normalization.")
         return
+    seed_urls = set(seeds_norm)
 
     db.upsert_queue(conn, [(u, 0, _now_iso()) for u in seeds_norm])
     _log.info(
@@ -276,7 +277,7 @@ async def crawl_loop(
 
     # Initialize Astra if enabled
     astra_col = None
-    if astra_utils.is_astra_enabled():
+    if astra_utils.should_use_astra_runtime():
         astra_col = astra_utils.get_astra_collection()
         if astra_col:
             _log.info("AstraDB enabled. Collection: %s", astra_col.full_name)
@@ -354,6 +355,8 @@ async def crawl_loop(
             return result  # type: ignore[return-value]
 
         async def process_row(url: str, depth: int) -> CrawlTaskResult:
+            is_seed_refresh = depth == 0 and url in seed_urls
+
             if depth > cfg.max_depth:
                 return CrawlTaskResult(
                     url=url,
@@ -382,7 +385,7 @@ async def crawl_loop(
                     """,
                     (url,),
                 ).fetchone()
-                if existing_row is not None:
+                if existing_row is not None and not is_seed_refresh:
                     return CrawlTaskResult(
                         url=url,
                         depth=depth,
@@ -391,7 +394,7 @@ async def crawl_loop(
                         skipped_delta=1,
                     )
 
-                if restore_from_astra and astra_col:
+                if restore_from_astra and astra_col and not is_seed_refresh:
                     cached_doc = await asyncio.to_thread(astra_utils.get_document_by_id, astra_col, url)
                     restored = _restore_page_row_from_astra_doc(url, cached_doc)
                     if restored is not None:

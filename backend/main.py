@@ -408,7 +408,7 @@ async def lifespan(fastapi_app: FastAPI):
                 "updated_at": datetime.now().isoformat(),
             }
 
-        if astra_utils.is_astra_enabled() and _truthy_env("COOCLE_PREWARM_ASTRA", default=False):
+        if astra_utils.should_use_astra_runtime() and _truthy_env("COOCLE_PREWARM_ASTRA", default=False):
             try:
                 await asyncio.to_thread(astra_utils.get_astra_collection)
             except Exception:

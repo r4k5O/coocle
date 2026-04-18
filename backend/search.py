@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-import os
 import sqlite3
 from typing import Any
 
@@ -10,9 +9,7 @@ from .embeddings import OllamaEmbedConfig, blob_to_floats, embed_text, env_embed
 
 
 def _prefer_astra_vector_search() -> bool:
-    if astra_utils.is_astra_enabled():
-        return True
-    return os.environ.get("RENDER", "").lower() == "true" and astra_utils.has_astra_credentials()
+    return astra_utils.should_use_astra_runtime()
 
 
 def search(conn: sqlite3.Connection, q: str, limit: int = 10) -> list[dict[str, Any]]:
