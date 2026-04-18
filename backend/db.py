@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
+DEFAULT_WRITE_BATCH_SIZE = 100
+
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -65,6 +67,31 @@ CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
 END;
 """
 
+PAGE_UPSERT_SQL = """
+INSERT INTO pages(
+  url, title, content, fetched_at, status_code, content_type,
+  embedding, embedding_dim, embedding_norm, embedding_model,
+  language
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(url) DO UPDATE SET
+  title=excluded.title,
+  content=excluded.content,
+  fetched_at=excluded.fetched_at,
+  status_code=excluded.status_code,
+  content_type=excluded.content_type,
+  embedding=COALESCE(excluded.embedding, pages.embedding),
+  embedding_dim=COALESCE(excluded.embedding_dim, pages.embedding_dim),
+  embedding_norm=COALESCE(excluded.embedding_norm, pages.embedding_norm),
+  embedding_model=COALESCE(excluded.embedding_model, pages.embedding_model),
+  language=excluded.language
+"""
+
+
+def _chunked(items: list, chunk_size: int):
+    for start in range(0, len(items), chunk_size):
+        yield items[start : start + chunk_size]
+
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
     target = str(db_path)
@@ -103,17 +130,63 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def upsert_queue(conn: sqlite3.Connection, urls: Iterable[tuple[str, int, str]]) -> int:
+def upsert_queue(
+    conn: sqlite3.Connection,
+    urls: Iterable[tuple[str, int, str]],
+    *,
+    batch_size: int = DEFAULT_WRITE_BATCH_SIZE,
+) -> int:
+    rows = list(urls)
+    if not rows:
+        return 0
+
     cur = conn.cursor()
-    cur.executemany(
-        """
-        INSERT INTO crawl_queue(url, depth, discovered_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(url) DO UPDATE SET
-          depth = MIN(crawl_queue.depth, excluded.depth)
-        """,
-        list(urls),
-    )
-    conn.commit()
-    return cur.rowcount
+    for batch in _chunked(rows, batch_size):
+        cur.executemany(
+            """
+            INSERT INTO crawl_queue(url, depth, discovered_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(url) DO UPDATE SET
+              depth = MIN(crawl_queue.depth, excluded.depth)
+            """,
+            batch,
+        )
+        conn.commit()
+    return len(rows)
+
+
+def delete_queue_urls(
+    conn: sqlite3.Connection,
+    urls: Iterable[str],
+    *,
+    batch_size: int = DEFAULT_WRITE_BATCH_SIZE,
+) -> int:
+    rows = [url for url in urls if url]
+    if not rows:
+        return 0
+
+    deleted = 0
+    for batch in _chunked(rows, batch_size):
+        placeholders = ", ".join("?" for _ in batch)
+        cur = conn.execute(f"DELETE FROM crawl_queue WHERE url IN ({placeholders})", batch)
+        conn.commit()
+        deleted += max(cur.rowcount, 0)
+    return deleted
+
+
+def upsert_pages(
+    conn: sqlite3.Connection,
+    rows: Iterable[tuple[object, ...]],
+    *,
+    batch_size: int = DEFAULT_WRITE_BATCH_SIZE,
+) -> int:
+    page_rows = list(rows)
+    if not page_rows:
+        return 0
+
+    cur = conn.cursor()
+    for batch in _chunked(page_rows, batch_size):
+        cur.executemany(PAGE_UPSERT_SQL, batch)
+        conn.commit()
+    return len(page_rows)
 

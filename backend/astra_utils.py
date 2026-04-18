@@ -3,9 +3,16 @@ from __future__ import annotations
 import logging
 import os
 from functools import lru_cache
+from typing import Iterable
 
 
 logger = logging.getLogger(__name__)
+ASTRA_WRITE_BATCH_SIZE = 100
+
+
+def _chunked(items: list, chunk_size: int):
+    for start in range(0, len(items), chunk_size):
+        yield items[start : start + chunk_size]
 
 @lru_cache(maxsize=1)
 def get_astra_collection():
@@ -66,3 +73,23 @@ def is_astra_enabled() -> bool:
 
 def reset_astra_cache() -> None:
     get_astra_collection.cache_clear()
+
+
+def upsert_documents(collection, documents: Iterable[dict], *, batch_size: int = ASTRA_WRITE_BATCH_SIZE) -> int:
+    docs = list(documents)
+    if not docs:
+        return 0
+
+    upserted = 0
+    for batch in _chunked(docs, batch_size):
+        for doc in batch:
+            try:
+                collection.find_one_and_replace(
+                    filter={"_id": doc["_id"]},
+                    replacement=doc,
+                    upsert=True,
+                )
+                upserted += 1
+            except Exception:
+                logger.debug("AstraDB insertion error for %s", doc.get("_id"), exc_info=True)
+    return upserted

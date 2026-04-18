@@ -167,6 +167,7 @@ async def crawl_loop(
 
     robots = RobotsCache()
     embed_cfg = cfg.embed_cfg or (env_embed_config() if cfg.enable_embeddings else None)
+    batch_size = int(getattr(db, "DEFAULT_WRITE_BATCH_SIZE", 100))
 
     # Initialize Astra if enabled
     astra_col = None
@@ -182,6 +183,10 @@ async def crawl_loop(
         pages_saved = 0
         skipped = 0
         errors = 0
+        pending_page_rows: list[tuple[object, ...]] = []
+        pending_queue_rows: list[tuple[str, int, str]] = []
+        pending_astra_docs: list[dict[str, object]] = []
+        processed_queue_urls: list[str] = []
 
         async def publish_status(**payload) -> None:
             if status_hook is None:
@@ -190,8 +195,31 @@ async def crawl_loop(
             if asyncio.iscoroutine(result):
                 await result
 
+        async def flush_pending_writes() -> None:
+            if pending_page_rows:
+                db.upsert_pages(conn, pending_page_rows, batch_size=batch_size)
+                pending_page_rows.clear()
+
+            if pending_astra_docs and astra_col:
+                await asyncio.to_thread(
+                    astra_utils.upsert_documents,
+                    astra_col,
+                    pending_astra_docs,
+                    batch_size=batch_size,
+                )
+                pending_astra_docs.clear()
+
+            if processed_queue_urls:
+                db.delete_queue_urls(conn, processed_queue_urls, batch_size=batch_size)
+                processed_queue_urls.clear()
+
+            if pending_queue_rows:
+                db.upsert_queue(conn, pending_queue_rows, batch_size=batch_size)
+                pending_queue_rows.clear()
+
         while not stop_event.is_set():
             if cfg.max_pages > 0 and pages_done >= cfg.max_pages:
+                await flush_pending_writes()
                 await publish_status(
                     state="idle",
                     current_url=None,
@@ -205,10 +233,12 @@ async def crawl_loop(
                 _log.info("Reached max_pages (%d). Stopping.", cfg.max_pages)
                 break
 
-            row = conn.execute(
-                "SELECT url, depth FROM crawl_queue ORDER BY discovered_at LIMIT 1"
-            ).fetchone()
-            if not row:
+            rows = conn.execute(
+                "SELECT url, depth FROM crawl_queue ORDER BY discovered_at LIMIT ?",
+                (batch_size,),
+            ).fetchall()
+            if not rows:
+                await flush_pending_writes()
                 await publish_status(
                     state="idle",
                     current_url=None,
@@ -231,57 +261,34 @@ async def crawl_loop(
                 )
                 break
 
-            url = str(row["url"])
-            depth = int(row["depth"])
-            conn.execute("DELETE FROM crawl_queue WHERE url = ?", (url,))
-            conn.commit()
-            await publish_status(
-                state="fetching",
-                current_url=url,
-                current_depth=depth,
-                message="Seite wird gecrawlt",
-                pages_done=pages_done,
-                pages_saved=pages_saved,
-                skipped=skipped,
-                errors=errors,
-            )
+            for row in rows:
+                if stop_event.is_set():
+                    break
+                if cfg.max_pages > 0 and pages_done >= cfg.max_pages:
+                    break
 
-            if depth > cfg.max_depth:
-                skipped += 1
+                url = str(row["url"])
+                depth = int(row["depth"])
+                processed_queue_urls.append(url)
+
                 await publish_status(
-                    state="skipped",
+                    state="fetching",
                     current_url=url,
                     current_depth=depth,
-                    message="Maximale Tiefe ueberschritten",
+                    message="Seite wird gecrawlt",
                     pages_done=pages_done,
                     pages_saved=pages_saved,
                     skipped=skipped,
                     errors=errors,
                 )
-                continue
 
-            if cfg.same_host_only and not any(_same_host(url, s) for s in seeds_norm):
-                skipped += 1
-                await publish_status(
-                    state="skipped",
-                    current_url=url,
-                    current_depth=depth,
-                    message="Anderer Host als Seed",
-                    pages_done=pages_done,
-                    pages_saved=pages_saved,
-                    skipped=skipped,
-                    errors=errors,
-                )
-                continue
-
-            try:
-                if not await robots.allowed(client, url, cfg.user_agent):
+                if depth > cfg.max_depth:
                     skipped += 1
                     await publish_status(
                         state="skipped",
                         current_url=url,
                         current_depth=depth,
-                        message="robots.txt blockiert den Abruf",
+                        message="Maximale Tiefe ueberschritten",
                         pages_done=pages_done,
                         pages_saved=pages_saved,
                         skipped=skipped,
@@ -289,178 +296,182 @@ async def crawl_loop(
                     )
                     continue
 
-                r = await client.get(
-                    url,
-                    timeout=cfg.request_timeout_s,
-                    headers={"User-Agent": cfg.user_agent, "Accept": "text/html,application/xhtml+xml"},
-                )
-                ct = (r.headers.get("content-type") or "").lower()
-                if r.status_code >= 400:
+                if cfg.same_host_only and not any(_same_host(url, s) for s in seeds_norm):
                     skipped += 1
                     await publish_status(
                         state="skipped",
                         current_url=url,
                         current_depth=depth,
-                        message=f"HTTP {r.status_code}",
+                        message="Anderer Host als Seed",
                         pages_done=pages_done,
                         pages_saved=pages_saved,
                         skipped=skipped,
                         errors=errors,
                     )
-                    _log.debug("Skip HTTP %s %s", r.status_code, url)
-                    continue
-                if "text/html" not in ct and "application/xhtml+xml" not in ct:
-                    skipped += 1
-                    await publish_status(
-                        state="skipped",
-                        current_url=url,
-                        current_depth=depth,
-                        message="Nicht-HTML Inhalt uebersprungen",
-                        pages_done=pages_done,
-                        pages_saved=pages_saved,
-                        skipped=skipped,
-                        errors=errors,
-                    )
-                    _log.debug("Skip non-HTML (%s) %s", ct[:60], url)
                     continue
 
-                html = r.text
-                if len(html) > cfg.max_content_chars:
-                    html = html[: cfg.max_content_chars]
-
-                title, text = _extract_text_and_title(html)
-                if len(text) > cfg.max_content_chars:
-                    text = text[: cfg.max_content_chars]
-
-                # Language detection
-                lang = None
-                if text and len(text.strip()) > 20:
-                    try:
-                        lang = detect(text[:2000])
-                    except Exception:
-                        _log.debug("Language detection failed for %s", url)
-
-                embedding_blob = None
-                embedding_dim = None
-                embedding_norm = None
-                embedding_model = None
-                if embed_cfg is not None and not astra_col:
-                    # Keep embedding input bounded (title + leading content).
-                    embed_input = (title or "") + "\n\n" + text[:8000]
-                    try:
-                        vec = await embed_text(client, embed_cfg, embed_input)
-                        embedding_blob = sqlite3.Binary(floats_to_blob(vec))
-                        embedding_dim = int(len(vec))
-                        embedding_norm = float(l2_norm(vec))
-                        embedding_model = embed_cfg.model
-                    except Exception:
-                        errors += 1
-                        _log.debug("Embedding error for %s", url, exc_info=True)
-
-                # AstraDB Insert
-                if astra_col:
-                    try:
-                        doc = {
-                            "_id": url,
-                            "url": url,
-                            "title": title,
-                            "content": text[:3500],
-                            "fetched_at": _now_iso(),
-                            "status_code": int(r.status_code),
-                            "content_type": ct[:200],
-                            "language": lang,
-                            "$vectorize": (title or "") + " " + text[:500]
-                        }
-                        astra_col.find_one_and_replace(
-                            filter={"_id": url},
-                            replacement=doc,
-                            upsert=True
+                try:
+                    if not await robots.allowed(client, url, cfg.user_agent):
+                        skipped += 1
+                        await publish_status(
+                            state="skipped",
+                            current_url=url,
+                            current_depth=depth,
+                            message="robots.txt blockiert den Abruf",
+                            pages_done=pages_done,
+                            pages_saved=pages_saved,
+                            skipped=skipped,
+                            errors=errors,
                         )
-                    except Exception as ae:
-                        _log.debug("AstraDB insertion error for %s", url, exc_info=True)
+                        continue
 
-                conn.execute(
-                    """
-                    INSERT INTO pages(
-                      url, title, content, fetched_at, status_code, content_type,
-                      embedding, embedding_dim, embedding_norm, embedding_model,
-                      language
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(url) DO UPDATE SET
-                      title=excluded.title,
-                      content=excluded.content,
-                      fetched_at=excluded.fetched_at,
-                      status_code=excluded.status_code,
-                      content_type=excluded.content_type,
-                      embedding=COALESCE(excluded.embedding, pages.embedding),
-                      embedding_dim=COALESCE(excluded.embedding_dim, pages.embedding_dim),
-                      embedding_norm=COALESCE(excluded.embedding_norm, pages.embedding_norm),
-                      embedding_model=COALESCE(excluded.embedding_model, pages.embedding_model),
-                      language=excluded.language
-                    """,
-                    (
+                    r = await client.get(
                         url,
-                        title,
-                        text,
-                        _now_iso(),
-                        int(r.status_code),
-                        ct[:200],
-                        embedding_blob,
-                        embedding_dim,
-                        embedding_norm,
-                        embedding_model,
-                        lang,
-                    ),
-                )
-                conn.commit()
-                pages_done += 1
-                pages_saved += 1
-                await publish_status(
-                    state="saved",
-                    current_url=url,
-                    current_depth=depth,
-                    message="Seite indexiert",
-                    pages_done=pages_done,
-                    pages_saved=pages_saved,
-                    skipped=skipped,
-                    errors=errors,
-                )
-                _log.info("Saved (%d/%d) depth=%d %s", pages_done, cfg.max_pages, depth, url)
+                        timeout=cfg.request_timeout_s,
+                        headers={"User-Agent": cfg.user_agent, "Accept": "text/html,application/xhtml+xml"},
+                    )
+                    ct = (r.headers.get("content-type") or "").lower()
+                    if r.status_code >= 400:
+                        skipped += 1
+                        await publish_status(
+                            state="skipped",
+                            current_url=url,
+                            current_depth=depth,
+                            message=f"HTTP {r.status_code}",
+                            pages_done=pages_done,
+                            pages_saved=pages_saved,
+                            skipped=skipped,
+                            errors=errors,
+                        )
+                        _log.debug("Skip HTTP %s %s", r.status_code, url)
+                        continue
+                    if "text/html" not in ct and "application/xhtml+xml" not in ct:
+                        skipped += 1
+                        await publish_status(
+                            state="skipped",
+                            current_url=url,
+                            current_depth=depth,
+                            message="Nicht-HTML Inhalt uebersprungen",
+                            pages_done=pages_done,
+                            pages_saved=pages_saved,
+                            skipped=skipped,
+                            errors=errors,
+                        )
+                        _log.debug("Skip non-HTML (%s) %s", ct[:60], url)
+                        continue
 
-                if depth < cfg.max_depth:
-                    links = _extract_links(url, html)
-                    discovered = _now_iso()
-                    db.upsert_queue(conn, [(l, depth + 1, discovered) for l in links])
+                    html = r.text
+                    if len(html) > cfg.max_content_chars:
+                        html = html[: cfg.max_content_chars]
 
-            except (httpx.HTTPError, sqlite3.Error, UnicodeError):
-                errors += 1
-                await publish_status(
-                    state="error",
-                    current_url=url,
-                    current_depth=depth,
-                    message="Fetch- oder Speicherfehler",
-                    pages_done=pages_done,
-                    pages_saved=pages_saved,
-                    skipped=skipped,
-                    errors=errors,
-                )
-                _log.debug("Fetch/store error for %s", url, exc_info=True)
-            except Exception:
-                errors += 1
-                await publish_status(
-                    state="error",
-                    current_url=url,
-                    current_depth=depth,
-                    message="Unerwarteter Crawl-Fehler",
-                    pages_done=pages_done,
-                    pages_saved=pages_saved,
-                    skipped=skipped,
-                    errors=errors,
-                )
-                _log.debug("Unexpected error for %s", url, exc_info=True)
+                    title, text = _extract_text_and_title(html)
+                    if len(text) > cfg.max_content_chars:
+                        text = text[: cfg.max_content_chars]
 
-            # Respect robots.txt Crawl-delay if present, else use config delay.
-            robots_delay = robots.get_delay(url, cfg.user_agent)
-            wait_s = max(cfg.delay_s, robots_delay or 0)
-            await asyncio.sleep(wait_s)
+                    lang = None
+                    if text and len(text.strip()) > 20:
+                        try:
+                            lang = detect(text[:2000])
+                        except Exception:
+                            _log.debug("Language detection failed for %s", url)
+
+                    embedding_blob = None
+                    embedding_dim = None
+                    embedding_norm = None
+                    embedding_model = None
+                    if embed_cfg is not None and not astra_col:
+                        # Keep embedding input bounded (title + leading content).
+                        embed_input = (title or "") + "\n\n" + text[:8000]
+                        try:
+                            vec = await embed_text(client, embed_cfg, embed_input)
+                            embedding_blob = sqlite3.Binary(floats_to_blob(vec))
+                            embedding_dim = int(len(vec))
+                            embedding_norm = float(l2_norm(vec))
+                            embedding_model = embed_cfg.model
+                        except Exception:
+                            errors += 1
+                            _log.debug("Embedding error for %s", url, exc_info=True)
+
+                    fetched_at = _now_iso()
+                    pending_page_rows.append(
+                        (
+                            url,
+                            title,
+                            text,
+                            fetched_at,
+                            int(r.status_code),
+                            ct[:200],
+                            embedding_blob,
+                            embedding_dim,
+                            embedding_norm,
+                            embedding_model,
+                            lang,
+                        )
+                    )
+
+                    if astra_col:
+                        pending_astra_docs.append(
+                            {
+                                "_id": url,
+                                "url": url,
+                                "title": title,
+                                "content": text[:3500],
+                                "fetched_at": fetched_at,
+                                "status_code": int(r.status_code),
+                                "content_type": ct[:200],
+                                "language": lang,
+                                "$vectorize": (title or "") + " " + text[:500],
+                            }
+                        )
+
+                    pages_done += 1
+                    pages_saved += 1
+                    await publish_status(
+                        state="saved",
+                        current_url=url,
+                        current_depth=depth,
+                        message="Seite indexiert",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
+                    _log.info("Saved (%d/%d) depth=%d %s", pages_done, cfg.max_pages, depth, url)
+
+                    if depth < cfg.max_depth:
+                        links = _extract_links(url, html)
+                        discovered = _now_iso()
+                        pending_queue_rows.extend((l, depth + 1, discovered) for l in links)
+
+                except (httpx.HTTPError, sqlite3.Error, UnicodeError):
+                    errors += 1
+                    await publish_status(
+                        state="error",
+                        current_url=url,
+                        current_depth=depth,
+                        message="Fetch- oder Speicherfehler",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
+                    _log.debug("Fetch/store error for %s", url, exc_info=True)
+                except Exception:
+                    errors += 1
+                    await publish_status(
+                        state="error",
+                        current_url=url,
+                        current_depth=depth,
+                        message="Unerwarteter Crawl-Fehler",
+                        pages_done=pages_done,
+                        pages_saved=pages_saved,
+                        skipped=skipped,
+                        errors=errors,
+                    )
+                    _log.debug("Unexpected error for %s", url, exc_info=True)
+
+                robots_delay = robots.get_delay(url, cfg.user_agent)
+                wait_s = max(cfg.delay_s, robots_delay or 0)
+                await asyncio.sleep(wait_s)
+
+            await flush_pending_writes()
