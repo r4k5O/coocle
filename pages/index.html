@@ -281,6 +281,21 @@
         `;
       }
 
+      function renderLoadingState() {
+        document.getElementById("summaryGrid").innerHTML = [
+          renderSummaryCard("Indexierte Seiten", "…", "Livezaehler wird geladen"),
+          renderSummaryCard("Warteschlange", "…", "Overview wird geladen"),
+          renderSummaryCard("Aktive Scans", "…", "Crawlerstatus wird geladen"),
+          renderSummaryCard("AstraDB", "…", "Verbindungsstatus wird geladen"),
+        ].join("");
+        document.getElementById("indexedCountLabel").textContent = "laedt...";
+        document.getElementById("queueCountLabel").textContent = "laedt...";
+        document.getElementById("currentCountLabel").textContent = "laedt...";
+        document.getElementById("indexedList").innerHTML = `<div class="empty">Indexdaten werden geladen...</div>`;
+        document.getElementById("queueList").innerHTML = `<div class="empty">Warteschlange wird geladen...</div>`;
+        document.getElementById("currentList").innerHTML = `<div class="empty">Crawlerstatus wird geladen...</div>`;
+      }
+
       function renderQueueItem(item) {
         const errorLine = item.last_error ? `<div class="itemMeta" style="margin-top:6px;">Fehler: ${escapeHtml(item.last_error)}</div>` : "";
         return `
@@ -335,27 +350,39 @@
         return "Archivierte HTML-Seiten";
       }
 
-      async function loadOverview() {
-        const res = await fetch("/api/pages/overview");
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+      async function fetchJson(url, timeoutMs = 8000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return await res.json();
+        } finally {
+          clearTimeout(timer);
         }
-        const data = await res.json();
+      }
 
+      function renderSummaryGrid(data) {
         document.getElementById("summaryGrid").innerHTML = [
           renderSummaryCard(
             "Indexierte Seiten",
             formatIndexedSummaryValue(data.summary),
             buildIndexedSummaryMeta(data)
           ),
-          renderSummaryCard("Warteschlange", data.summary.queued_count, "Noch zu crawlende URLs"),
-          renderSummaryCard("Aktive Scans", data.summary.active_scans, data.crawler_status?.message || "Crawlerstatus"),
+          renderSummaryCard("Warteschlange", data.summary.queued_count ?? "?", "Noch zu crawlende URLs"),
+          renderSummaryCard("Aktive Scans", data.summary.active_scans ?? "?", data.crawler_status?.message || "Crawlerstatus"),
           renderSummaryCard(
             "AstraDB",
             data.astra?.connected ? "Verbunden" : data.astra?.enabled ? "Aktiv, aber offline" : "Deaktiviert",
             data.astra?.collection || "keine Collection"
           ),
         ].join("");
+      }
+
+      function renderOverview(data) {
+        renderSummaryGrid(data);
 
         const pendingIndexedCount = data.summary.pending_indexed_count || 0;
         document.getElementById("indexedCountLabel").textContent = pendingIndexedCount
@@ -377,10 +404,62 @@
           : `<div class="empty">Gerade wird nichts aktiv gescannt.</div>`;
       }
 
-      loadOverview().catch((err) => {
+      let latestOverview = null;
+      let overviewInFlight = false;
+      let liveCountInFlight = false;
+
+      async function loadOverview() {
+        if (overviewInFlight) return;
+        overviewInFlight = true;
+        try {
+          const data = await fetchJson("/api/pages/overview", 8000);
+          latestOverview = data;
+          renderOverview(data);
+        } finally {
+          overviewInFlight = false;
+        }
+      }
+
+      async function refreshLiveCount() {
+        if (liveCountInFlight || !latestOverview) return;
+        liveCountInFlight = true;
+        try {
+          const liveData = await fetchJson("/api/pages/live-count", 15000);
+          latestOverview = {
+            ...latestOverview,
+            summary: {
+              ...latestOverview.summary,
+              indexed_count: liveData.summary?.indexed_count ?? latestOverview.summary?.indexed_count,
+              indexed_count_is_estimate: liveData.summary?.indexed_count_is_estimate ?? latestOverview.summary?.indexed_count_is_estimate,
+              indexed_count_source: liveData.summary?.indexed_count_source ?? latestOverview.summary?.indexed_count_source,
+              sqlite_indexed_count: liveData.summary?.sqlite_indexed_count ?? latestOverview.summary?.sqlite_indexed_count,
+              pending_indexed_count: liveData.summary?.pending_indexed_count ?? latestOverview.summary?.pending_indexed_count,
+            },
+            astra: {
+              ...latestOverview.astra,
+              ...liveData.astra,
+            },
+          };
+          renderSummaryGrid(latestOverview);
+        } finally {
+          liveCountInFlight = false;
+        }
+      }
+
+      async function loadPageData() {
+        await loadOverview();
+        await refreshLiveCount();
+      }
+
+      renderLoadingState();
+      loadPageData().catch((err) => {
         document.getElementById("summaryGrid").innerHTML = renderSummaryCard("Fehler", "Pages API nicht erreichbar", err.message);
+        document.getElementById("indexedList").innerHTML = `<div class="empty">Die Seitenansicht konnte nicht geladen werden.</div>`;
+        document.getElementById("queueList").innerHTML = `<div class="empty">Die Warteschlange konnte nicht geladen werden.</div>`;
+        document.getElementById("currentList").innerHTML = `<div class="empty">Der Crawlerstatus konnte nicht geladen werden.</div>`;
       });
       setInterval(() => loadOverview().catch(() => {}), 5000);
+      setInterval(() => refreshLiveCount().catch(() => {}), 15000);
     </script>
   </body>
 </html>

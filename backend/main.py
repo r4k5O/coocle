@@ -212,6 +212,23 @@ def _astra_document_count_estimate(collection) -> int | None:
     return astra_utils.estimated_document_count(collection)
 
 
+def _astra_runtime_status() -> dict[str, object]:
+    astra_collection = _astra_collection_for_runtime()
+    return {
+        "enabled": astra_utils.is_astra_enabled(),
+        "credentials_configured": astra_utils.has_astra_credentials(),
+        "connected": bool(astra_collection),
+        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
+        "document_count": None,
+        "document_count_exact": None,
+        "document_count_live": None,
+        "document_count_estimate": None,
+        "count_is_estimate": False,
+        "count_source": "unavailable",
+        "count_is_live": False,
+    }
+
+
 def _astra_count_snapshot(
     request: Request,
     *,
@@ -694,7 +711,7 @@ def api_pages_overview(
                 }
             )
 
-    astra_status = _astra_count_snapshot(request, live=True, allow_estimate=False)
+    astra_status = _astra_runtime_status()
     astra_count = astra_status.get("document_count")
 
     visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
@@ -729,6 +746,53 @@ def api_pages_overview(
             }
             for row in queue_rows
         ],
+    }
+
+
+@app.get("/api/pages/live-count")
+def api_pages_live_count(request: Request):
+    conn = _conn_from_request(request)
+    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
+
+    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
+    pending_indexed_pages = [
+        page
+        for page in (crawl_status.get("pending_indexed_pages") or [])
+        if isinstance(page, dict) and page.get("url")
+    ]
+    pending_urls = list({str(page["url"]) for page in pending_indexed_pages})
+    existing_pending_urls: set[str] = set()
+    if pending_urls:
+        placeholders = ", ".join("?" for _ in pending_urls)
+        existing_pending_urls = {
+            str(row["url"])
+            for row in conn.execute(
+                f"SELECT url FROM pages WHERE url IN ({placeholders})",
+                pending_urls,
+            ).fetchall()
+        }
+
+    astra_status = _astra_count_snapshot(request, live=True, allow_estimate=False)
+    astra_count = astra_status.get("document_count")
+
+    visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
+    effective_indexed_count = int(visible_indexed_count)
+    effective_count_is_estimate = False
+    effective_count_source = "sqlite"
+    if astra_count is not None and int(astra_count) > effective_indexed_count:
+        effective_indexed_count = int(astra_count)
+        effective_count_is_estimate = bool(astra_status.get("count_is_estimate"))
+        effective_count_source = str(astra_status.get("count_source") or "astra")
+
+    return {
+        "summary": {
+            "indexed_count": effective_indexed_count,
+            "indexed_count_is_estimate": effective_count_is_estimate,
+            "indexed_count_source": effective_count_source,
+            "sqlite_indexed_count": indexed_count,
+            "pending_indexed_count": len(set(pending_urls)),
+        },
+        "astra": astra_status,
     }
 
 
