@@ -127,6 +127,7 @@ Wichtig:
 
 - Das ist absichtlich destruktiv und eignet sich nur fuer Demo- oder Test-Deployments.
 - Ein Service-Neustart loescht mit dieser Einstellung ebenfalls die Daten erneut.
+- Auf Render ist `COOCLE_RESET_DATA_STRICT=0` gesetzt, damit ein voruebergehender Astra- oder Reset-Fehler nicht den kompletten Backend-Start blockiert.
 
 ## Für GitHub
 

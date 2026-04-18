@@ -18,3 +18,5 @@ services:
         value: "1"
       - key: COOCLE_RESET_DATA_ON_START
         value: "1"
+      - key: COOCLE_RESET_DATA_STRICT
+        value: "0"

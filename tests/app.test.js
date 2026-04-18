@@ -5,8 +5,10 @@ const {
   buildSearchUrl,
   escapeHtml,
   formatSummaryBody,
+  isTransientBackendFailure,
   renderInlineMarkdown,
   renderMarkdown,
+  shouldUseLocalMockFallback,
   toResultsShape,
 } = require("../app.js");
 
@@ -69,4 +71,17 @@ test("buildSearchUrl defaults searches to hybrid mode", () => {
   assert.equal(url.searchParams.get("summarize"), "true");
 
   delete global.window;
+});
+
+test("isTransientBackendFailure matches cold-start style backend failures", () => {
+  assert.equal(isTransientBackendFailure({ name: "NoBackendError" }), true);
+  assert.equal(isTransientBackendFailure({ name: "TypeError" }), true);
+  assert.equal(isTransientBackendFailure({ name: "HttpStatusError", status: 503 }), true);
+  assert.equal(isTransientBackendFailure({ name: "HttpStatusError", status: 500 }), false);
+});
+
+test("shouldUseLocalMockFallback only enables mock mode for file URLs", () => {
+  assert.equal(shouldUseLocalMockFallback({ protocol: "file:" }), true);
+  assert.equal(shouldUseLocalMockFallback({ protocol: "https:" }), false);
+  assert.equal(shouldUseLocalMockFallback(null), false);
 });

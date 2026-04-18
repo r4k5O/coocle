@@ -127,6 +127,11 @@ def init_db(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (ip, day)
         )
     """)
+
+    # Keep the external-content FTS index authoritative on startup. Older databases may
+    # already contain rows in `pages` from before `pages_fts` existed, and simple row
+    # counts are not enough to detect that kind of drift reliably.
+    conn.execute("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')")
     conn.commit()
 
 

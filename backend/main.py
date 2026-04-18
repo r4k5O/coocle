@@ -196,28 +196,40 @@ def _excerpt(text: str | None, limit: int = 220) -> str:
 async def _reset_datastores_on_start(conn) -> None:
     if not _truthy_env("COOCLE_RESET_DATA_ON_START", default=False):
         return
+    strict = _truthy_env("COOCLE_RESET_DATA_STRICT", default=False)
 
-    cleared = dbmod.reset_runtime_data(conn)
-    logger.warning(
-        "Startup reset cleared SQLite data before serving traffic: pages=%s queue=%s usage=%s",
-        cleared["pages"],
-        cleared["crawl_queue"],
-        cleared["summarization_usage"],
-    )
+    try:
+        cleared = dbmod.reset_runtime_data(conn)
+        logger.warning(
+            "Startup reset cleared SQLite data before serving traffic: pages=%s queue=%s usage=%s",
+            cleared["pages"],
+            cleared["crawl_queue"],
+            cleared["summarization_usage"],
+        )
+    except Exception:
+        logger.exception("Startup SQLite reset failed%s", "; aborting startup" if strict else "; continuing")
+        if strict:
+            raise
+        return
 
     if not astra_utils.is_astra_enabled():
         return
 
-    astra_collection = await asyncio.to_thread(astra_utils.get_astra_collection)
-    if not astra_collection:
-        raise RuntimeError("AstraDB reset requested on startup, but the collection could not be opened.")
+    try:
+        astra_collection = await asyncio.to_thread(astra_utils.get_astra_collection)
+        if not astra_collection:
+            raise RuntimeError("AstraDB reset requested on startup, but the collection could not be opened.")
 
-    deleted = await asyncio.to_thread(astra_utils.clear_documents, astra_collection)
-    logger.warning(
-        "Startup reset cleared AstraDB collection %s: %s document(s) removed",
-        getattr(astra_collection, "full_name", "unknown"),
-        deleted,
-    )
+        deleted = await asyncio.to_thread(astra_utils.clear_documents, astra_collection)
+        logger.warning(
+            "Startup reset cleared AstraDB collection %s: %s document(s) removed",
+            getattr(astra_collection, "full_name", "unknown"),
+            deleted,
+        )
+    except Exception:
+        logger.exception("Startup Astra reset failed%s", "; aborting startup" if strict else "; continuing")
+        if strict:
+            raise
 
 
 @asynccontextmanager

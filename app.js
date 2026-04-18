@@ -55,6 +55,96 @@ class NoBackendError extends Error {
   }
 }
 
+function createAbortError() {
+  const err = new Error("abgebrochen");
+  err.name = "AbortError";
+  return err;
+}
+
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(createAbortError());
+    };
+    const cleanup = () => {
+      signal?.removeEventListener?.("abort", onAbort);
+    };
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
+function shouldUseLocalMockFallback(locationLike = typeof window !== "undefined" ? window.location : null) {
+  return Boolean(locationLike && locationLike.protocol === "file:");
+}
+
+function isTransientBackendFailure(err) {
+  if (!err || err.name === "AbortError") return false;
+  if (err.name === "NoBackendError" || err.name === "TypeError") return true;
+  return [502, 503, 504].includes(Number(err.status));
+}
+
+function renderBackendUnavailable(q, message) {
+  if (list) {
+    list.innerHTML = "";
+    list.hidden = true;
+  }
+  if (emptyState) {
+    emptyState.hidden = false;
+    emptyState.querySelector(".emptyTitle").textContent = "Backend nicht erreichbar.";
+    emptyState.querySelector(".emptyText").textContent = message;
+  }
+  if (resultCount) resultCount.textContent = `0 Ergebnisse für „${q}“`;
+}
+
+async function fetchSearchPayload(url, headers, signal, summarize = false) {
+  const maxAttempts = summarize ? 2 : 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+        signal,
+      });
+
+      if (!res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (res.status === 404 && contentType.includes("text/html")) {
+          throw new NoBackendError("Kein Backend unter /api/search (404).");
+        }
+        const text = await res.text().catch(() => "");
+        const err = new Error(`HTTP ${res.status}${text ? ` — ${text.slice(0, 160)}` : ""}`);
+        err.name = "HttpStatusError";
+        err.status = res.status;
+        throw err;
+      }
+
+      return await res.json();
+    } catch (err) {
+      if (attempt >= maxAttempts || !isTransientBackendFailure(err)) {
+        throw err;
+      }
+      setStatus(
+        summarize
+          ? `Backend startet… neuer Versuch ${attempt + 1}/${maxAttempts}`
+          : `Backend startet… neuer Versuch ${attempt + 1}/${maxAttempts}`,
+        "info"
+      );
+      await wait(700 * attempt, signal);
+    }
+  }
+}
+
 function setStatus(text, kind = "info") {
   if (!statusEl) return;
   statusEl.textContent = text || "";
@@ -465,22 +555,7 @@ async function search(q, summarize = false, options = {}) {
 
   try {
     const startedAt = performance.now();
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      headers: headers,
-      signal: activeController.signal,
-    });
-
-    if (!res.ok) {
-      const contentType = res.headers.get("content-type") || "";
-      if (res.status === 404 && contentType.includes("text/html")) {
-        throw new NoBackendError("Kein Backend unter /api/search (404).");
-      }
-      const text = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status}${text ? ` — ${text.slice(0, 160)}` : ""}`);
-    }
-
-    const payload = await res.json();
+    const payload = await fetchSearchPayload(url, headers, activeController.signal, summarize);
     const results = toResultsShape(payload, query);
 
     if (!summarize) {
@@ -529,26 +604,41 @@ async function search(q, summarize = false, options = {}) {
       return;
     }
 
-    // fallback: show a minimal local mock so the UI is still usable standalone
-    const results = toResultsShape(
-      {
-        results: [
-          {
-            title: `Mock: Ergebnis für „${query}“`,
-            url: "",
-            snippet:
-              "Kein Backend erreichbar. In `app.js` kannst du `API_BASE`/`SEARCH_PATH` auf deinen Server setzen.",
-            score: null,
-          },
-        ],
-      },
-      query
-    );
-    render(results, query);
-    if (err?.name === "NoBackendError") {
+    if (shouldUseLocalMockFallback()) {
+      const results = toResultsShape(
+        {
+          results: [
+            {
+              title: `Mock: Ergebnis für „${query}“`,
+              url: "",
+              snippet:
+                "Kein Backend erreichbar. In `app.js` kannst du `API_BASE`/`SEARCH_PATH` auf deinen Server setzen.",
+              score: null,
+            },
+          ],
+        },
+        query
+      );
+      render(results, query);
       setStatus("Demo-Modus · kein Backend konfiguriert", "info");
+      return;
+    }
+
+    renderBackendUnavailable(
+      query,
+      err?.name === "NoBackendError" || isTransientBackendFailure(err)
+        ? "Render startet gerade oder das Backend ist kurz nicht erreichbar. Bitte in ein paar Sekunden erneut versuchen."
+        : `Die Suche konnte nicht geladen werden: ${String(err?.message || err)}`
+    );
+    if (err?.name === "NoBackendError") {
+      setStatus("Backend nicht erreichbar", "error");
     } else {
-      setStatus(`Fehler · ${String(err?.message || err)}`, "error");
+      setStatus(
+        isTransientBackendFailure(err)
+          ? "Backend nicht erreichbar · bitte gleich erneut versuchen"
+          : `Fehler · ${String(err?.message || err)}`,
+        "error"
+      );
     }
   } finally {
     btn.disabled = false;
@@ -761,8 +851,10 @@ if (typeof module !== "undefined" && module.exports) {
     buildSearchUrl,
     escapeHtml,
     formatSummaryBody,
+    isTransientBackendFailure,
     renderInlineMarkdown,
     renderMarkdown,
+    shouldUseLocalMockFallback,
     toResultsShape,
   };
 }

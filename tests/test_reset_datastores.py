@@ -90,6 +90,50 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         get_collection.assert_called_once_with()
         clear_documents.assert_called_once_with(fake_collection)
 
+    async def test_startup_reset_tolerates_astra_failure_when_not_strict(self) -> None:
+        from backend import main as imported_main
+
+        main = reload(imported_main)
+
+        with patch.dict(
+            os.environ,
+            {"COOCLE_RESET_DATA_ON_START": "1", "COOCLE_RESET_DATA_STRICT": "0"},
+            clear=False,
+        ), patch.object(
+            main.dbmod,
+            "reset_runtime_data",
+            return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
+        ) as reset_db, patch.object(main.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_collection",
+            side_effect=RuntimeError("astra offline"),
+        ) as get_collection:
+            await main._reset_datastores_on_start(object())
+
+        reset_db.assert_called_once()
+        get_collection.assert_called_once_with()
+
+    async def test_startup_reset_raises_astra_failure_when_strict(self) -> None:
+        from backend import main as imported_main
+
+        main = reload(imported_main)
+
+        with patch.dict(
+            os.environ,
+            {"COOCLE_RESET_DATA_ON_START": "1", "COOCLE_RESET_DATA_STRICT": "1"},
+            clear=False,
+        ), patch.object(
+            main.dbmod,
+            "reset_runtime_data",
+            return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
+        ), patch.object(main.astra_utils, "is_astra_enabled", return_value=True), patch.object(
+            main.astra_utils,
+            "get_astra_collection",
+            side_effect=RuntimeError("astra offline"),
+        ):
+            with self.assertRaises(RuntimeError):
+                await main._reset_datastores_on_start(object())
+
     async def test_startup_reset_skips_everything_when_disabled(self) -> None:
         from backend import main as imported_main
 
