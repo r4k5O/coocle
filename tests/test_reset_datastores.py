@@ -84,11 +84,13 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             "get_astra_collection",
             return_value=fake_collection,
         ) as get_collection, patch.object(main.astra_utils, "clear_documents", return_value=9) as clear_documents:
-            await main._reset_datastores_on_start(object())
+            with patch.object(main.logger, "warning") as log_warning:
+                await main._reset_datastores_on_start(object())
 
         reset_db.assert_called_once()
         get_collection.assert_called_once_with()
         clear_documents.assert_called_once_with(fake_collection)
+        self.assertGreaterEqual(log_warning.call_count, 2)
 
     async def test_startup_reset_tolerates_astra_failure_when_not_strict(self) -> None:
         from backend import main as imported_main
@@ -108,10 +110,12 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
         ) as get_collection:
-            await main._reset_datastores_on_start(object())
+            with patch.object(main.logger, "warning"), patch.object(main.logger, "exception") as log_exception:
+                await main._reset_datastores_on_start(object())
 
         reset_db.assert_called_once()
         get_collection.assert_called_once_with()
+        log_exception.assert_called_once()
 
     async def test_startup_reset_raises_astra_failure_when_strict(self) -> None:
         from backend import main as imported_main
@@ -131,8 +135,11 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             "get_astra_collection",
             side_effect=RuntimeError("astra offline"),
         ):
-            with self.assertRaises(RuntimeError):
-                await main._reset_datastores_on_start(object())
+            with patch.object(main.logger, "warning"), patch.object(main.logger, "exception") as log_exception:
+                with self.assertRaises(RuntimeError):
+                    await main._reset_datastores_on_start(object())
+
+        log_exception.assert_called_once()
 
     async def test_startup_reset_skips_everything_when_disabled(self) -> None:
         from backend import main as imported_main
