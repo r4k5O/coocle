@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 ASTRA_WRITE_BATCH_SIZE = 100
 ASTRA_DELETE_TIMEOUT_MS = 120_000
 ASTRA_COUNT_TIMEOUT_MS = 30_000
+ASTRA_EXACT_COUNT_TIMEOUT_MS = 10_000
+ASTRA_EXACT_COUNT_UPPER_BOUND = 20_000
 ASTRA_META_COLLECTION_NAME = "coocle_internal"
 ASTRA_RESET_MARKER_ID = "__coocle_reset_marker__"
 
@@ -157,6 +159,28 @@ def estimated_document_count(collection, *, general_method_timeout_ms: int = AST
         )
     except Exception:
         logger.debug("AstraDB estimated count failed", exc_info=True)
+        return None
+
+
+def exact_document_count(
+    collection,
+    *,
+    upper_bound: int = ASTRA_EXACT_COUNT_UPPER_BOUND,
+    general_method_timeout_ms: int = ASTRA_EXACT_COUNT_TIMEOUT_MS,
+) -> int | None:
+    if collection is None:
+        return None
+
+    try:
+        return int(
+            collection.count_documents(
+                {},
+                upper_bound=max(1, int(upper_bound)),
+                general_method_timeout_ms=general_method_timeout_ms,
+            )
+        )
+    except Exception:
+        logger.debug("AstraDB exact count failed", exc_info=True)
         return None
 
 

@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FREE_SUMMARY_LIMIT = 10
 logger = logging.getLogger(__name__)
 SUMMARY_CONTEXT_LIMIT = 5
+ASTRA_COUNT_CACHE_TTL_S = 30.0
 
 
 class SlidingWindowRateLimiter:
@@ -199,8 +200,52 @@ def _astra_collection_for_runtime():
     return astra_utils.get_astra_collection()
 
 
+def _astra_document_count_exact(collection) -> int | None:
+    return astra_utils.exact_document_count(collection)
+
+
 def _astra_document_count_estimate(collection) -> int | None:
     return astra_utils.estimated_document_count(collection)
+
+
+def _astra_count_snapshot(request: Request) -> dict[str, object]:
+    now = time.monotonic()
+    cached = getattr(request.app.state, "astra_count_cache", None)
+    if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
+        snapshot = cached.get("snapshot")
+        if isinstance(snapshot, dict):
+            return dict(snapshot)
+
+    astra_collection = _astra_collection_for_runtime()
+    exact_count = _astra_document_count_exact(astra_collection)
+    estimate_count = None
+    effective_count = exact_count
+    count_is_estimate = False
+    count_source = "astra_exact" if exact_count is not None else "unavailable"
+
+    if effective_count is None:
+        estimate_count = _astra_document_count_estimate(astra_collection)
+        if estimate_count is not None:
+            effective_count = estimate_count
+            count_is_estimate = True
+            count_source = "astra_estimate"
+
+    snapshot = {
+        "enabled": astra_utils.is_astra_enabled(),
+        "credentials_configured": astra_utils.has_astra_credentials(),
+        "connected": bool(astra_collection),
+        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
+        "document_count": effective_count,
+        "document_count_exact": exact_count,
+        "document_count_estimate": estimate_count,
+        "count_is_estimate": count_is_estimate,
+        "count_source": count_source,
+    }
+    request.app.state.astra_count_cache = {
+        "expires_at": now + ASTRA_COUNT_CACHE_TTL_S,
+        "snapshot": snapshot,
+    }
+    return dict(snapshot)
 
 
 def _reset_deploy_key() -> str | None:
@@ -299,6 +344,7 @@ async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
     )
+    fastapi_app.state.astra_count_cache = None
     fastapi_app.state.crawl_status = {
         "state": "idle",
         "current_url": None,
@@ -522,15 +568,19 @@ def api_stats(request: Request):
     conn = _conn_from_request(request)
     sqlite_pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
     queued = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-    astra_collection = _astra_collection_for_runtime()
-    astra_count = _astra_document_count_estimate(astra_collection)
+    astra_status = _astra_count_snapshot(request)
+    astra_count = astra_status.get("document_count")
     pages = max(int(sqlite_pages), int(astra_count or 0))
     return {
         "pages": pages,
         "queued": queued,
         "db": str(_db_path()),
         "sqlite_pages": sqlite_pages,
-        "astra_pages_estimate": astra_count,
+        "astra_pages": astra_count,
+        "astra_pages_exact": astra_status.get("document_count_exact"),
+        "astra_pages_estimate": astra_status.get("document_count_estimate"),
+        "astra_pages_is_estimate": astra_status.get("count_is_estimate"),
+        "astra_count_source": astra_status.get("count_source"),
     }
 
 
@@ -623,22 +673,23 @@ def api_pages_overview(
                 }
             )
 
-    astra_collection = _astra_collection_for_runtime()
-    astra_count = _astra_document_count_estimate(astra_collection)
-    astra_status = {
-        "enabled": astra_utils.is_astra_enabled(),
-        "credentials_configured": astra_utils.has_astra_credentials(),
-        "connected": bool(astra_collection),
-        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
-        "document_count_estimate": astra_count,
-    }
+    astra_status = _astra_count_snapshot(request)
+    astra_count = astra_status.get("document_count")
 
     visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
-    effective_indexed_count = max(int(visible_indexed_count), int(astra_count or 0))
+    effective_indexed_count = int(visible_indexed_count)
+    effective_count_is_estimate = False
+    effective_count_source = "sqlite"
+    if astra_count is not None and int(astra_count) > effective_indexed_count:
+        effective_indexed_count = int(astra_count)
+        effective_count_is_estimate = bool(astra_status.get("count_is_estimate"))
+        effective_count_source = str(astra_status.get("count_source") or "astra")
 
     return {
         "summary": {
             "indexed_count": effective_indexed_count,
+            "indexed_count_is_estimate": effective_count_is_estimate,
+            "indexed_count_source": effective_count_source,
             "sqlite_indexed_count": indexed_count,
             "queued_count": queued_count,
             "active_scans": len(current_scans),

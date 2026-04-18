@@ -309,6 +309,28 @@
         `;
       }
 
+      function formatIndexedSummaryValue(summary) {
+        if (summary?.indexed_count_is_estimate) {
+          return `~${summary.indexed_count}`;
+        }
+        return String(summary?.indexed_count ?? 0);
+      }
+
+      function buildIndexedSummaryMeta(data) {
+        const sqliteCount = data.summary?.sqlite_indexed_count ?? 0;
+        const exactAstraCount = data.astra?.document_count_exact;
+        const estimateAstraCount = data.astra?.document_count_estimate;
+        const source = data.summary?.indexed_count_source;
+
+        if (source === "astra_exact" && exactAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+          return `SQLite ${sqliteCount} · Astra exakt ${exactAstraCount}`;
+        }
+        if (source === "astra_estimate" && estimateAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+          return `SQLite ${sqliteCount} · Astra geschaetzt ~${estimateAstraCount}`;
+        }
+        return "Archivierte HTML-Seiten";
+      }
+
       async function loadOverview() {
         const res = await fetch("/api/pages/overview");
         if (!res.ok) {
@@ -319,10 +341,8 @@
         document.getElementById("summaryGrid").innerHTML = [
           renderSummaryCard(
             "Indexierte Seiten",
-            data.summary.indexed_count,
-            data.astra?.document_count_estimate && data.summary.sqlite_indexed_count !== data.summary.indexed_count
-              ? `SQLite ${data.summary.sqlite_indexed_count} · Astra ~${data.astra.document_count_estimate}`
-              : "Archivierte HTML-Seiten"
+            formatIndexedSummaryValue(data.summary),
+            buildIndexedSummaryMeta(data)
           ),
           renderSummaryCard("Warteschlange", data.summary.queued_count, "Noch zu crawlende URLs"),
           renderSummaryCard("Aktive Scans", data.summary.active_scans, data.crawler_status?.message || "Crawlerstatus"),
