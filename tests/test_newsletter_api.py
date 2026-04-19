@@ -288,7 +288,7 @@ class NewsletterApiTests(unittest.TestCase):
     def test_newsletter_check_milestones_requires_smtp(self) -> None:
         response = self.client.post("/api/newsletter/check-milestones")
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()["detail"], "SMTP fuer Newsletter ist nicht konfiguriert.")
+        self.assertEqual(response.json()["detail"], "Newsletter-Versand ist nicht konfiguriert.")
 
     def test_newsletter_check_milestones_requires_admin_token(self) -> None:
         with patch.dict(
