@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db as dbmod
+from . import direct_email as directemailmod
 from . import newsletter as newslettermod
 from . import astra_utils
 from .crawler import CrawlConfig, crawl_loop
@@ -604,8 +605,8 @@ async def api_newsletter_send(
 ):
     _require_newsletter_admin_token(x_admin_token)
 
-    if not newslettermod.mailtrap_newsletter_configured():
-        raise HTTPException(status_code=503, detail="Mailtrap fuer Newsletter ist nicht konfiguriert.")
+    if not directemailmod.smtp_configured():
+        raise HTTPException(status_code=503, detail="SMTP fuer Newsletter ist nicht konfiguriert.")
 
     payload = await _read_json_object(request)
     subject = str(payload.get("subject") or "").strip()
@@ -617,14 +618,13 @@ async def api_newsletter_send(
         raise HTTPException(status_code=400, detail="Es sind keine Newsletter-Abonnenten vorhanden.")
 
     try:
-        async with httpx.AsyncClient() as client:
-            send_result = await newslettermod.send_newsletter(
-                client,
-                recipients,
-                subject=subject,
-                html=html,
-                text=text,
-            )
+        send_result = await asyncio.to_thread(
+            directemailmod.send_newsletter,
+            recipients,
+            subject=subject,
+            html=html or None,
+            text=text or None,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
