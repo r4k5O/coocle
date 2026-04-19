@@ -384,7 +384,12 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertIn("Keine neuen Meilensteine", payload["message"])
 
     def test_github_stats_endpoint_requires_config(self) -> None:
-        response = self.client.get("/api/github/stats")
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPO": ""},
+            clear=False,
+        ):
+            response = self.client.get("/api/github/stats")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "GITHUB_REPO ist nicht konfiguriert.")
 
