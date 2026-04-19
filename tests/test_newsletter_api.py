@@ -285,23 +285,25 @@ class NewsletterApiTests(unittest.TestCase):
             self.assertIn("Coocle April Update", msg["msg"])
             self.assertIn("text/html", msg["msg"])
 
-    def test_newsletter_check_milestones_requires_admin_token(self) -> None:
-        response = self.client.post("/api/newsletter/check-milestones")
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
-
     def test_newsletter_check_milestones_requires_smtp(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token"},
-            clear=False,
-        ):
-            response = self.client.post(
-                "/api/newsletter/check-milestones",
-                headers={"X-Admin-Token": "secret-token"},
-            )
+        response = self.client.post("/api/newsletter/check-milestones")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "SMTP fuer Newsletter ist nicht konfiguriert.")
+
+    def test_newsletter_check_milestones_requires_admin_token(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token",
+                "SMTP_HOST": "smtp.test.local",
+                "SMTP_USERNAME": "test",
+                "SMTP_PASSWORD": "test",
+            },
+            clear=False,
+        ):
+            response = self.client.post("/api/newsletter/check-milestones")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
 
     def test_newsletter_check_milestones_sends_page_milestone(self) -> None:
         self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
@@ -334,8 +336,8 @@ class NewsletterApiTests(unittest.TestCase):
                 "SMTP_SENDER_NAME": "Coocle News",
             },
             clear=False,
-        ), patch("backend.direct_email.smtplib.SMTP", FakeSMTP), patch.object(
-            self.main_module.pages_service, "build_stats_payload", return_value={"pages": 100}
+        ), patch("backend.direct_email.smtplib.SMTP", FakeSMTP), patch(
+            "backend.main.build_stats_payload", return_value={"pages": 100}
         ):
             response = self.client.post(
                 "/api/newsletter/check-milestones",
@@ -367,8 +369,8 @@ class NewsletterApiTests(unittest.TestCase):
                 "SMTP_SENDER_NAME": "Coocle News",
             },
             clear=False,
-        ), patch.object(
-            self.main_module.pages_service, "build_stats_payload", return_value={"pages": 50}
+        ), patch(
+            "backend.main.build_stats_payload", return_value={"pages": 50}
         ), patch("backend.direct_email.smtplib.SMTP"):
             response = self.client.post(
                 "/api/newsletter/check-milestones",
