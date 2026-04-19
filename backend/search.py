@@ -69,14 +69,24 @@ async def vector_search(
                     include_similarity=True
                 )
                 out = []
+                seen_urls = set()
                 for doc in results:
+                    url = doc.get("url")
+                    if not url:
+                        continue
+                    # Skip duplicates
+                    if url in seen_urls:
+                        continue
+                    seen_urls.add(url)
                     out.append({
-                        "title": doc.get("title") or doc.get("url") or "Ohne Titel",
-                        "url": doc.get("url") or "",
+                        "title": doc.get("title") or url or "Ohne Titel",
+                        "url": url,
                         "snippet": doc.get("content")[:300] + "..." if doc.get("content") else "",
                         "language": doc.get("language"),
                         "score": doc.get("$similarity", 0.0)
                     })
+                    if len(out) >= limit:
+                        break
                 return out
             except Exception:
                 # Fall back to local vector search when Astra is slow or unavailable.
