@@ -19,7 +19,7 @@ def _excerpt(text: str | None, limit: int = 220) -> str:
 
 def _sqlite_count(conn, table: str) -> int:
     row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
-    return int(row["c"] if row else 0)
+    return int(row["c"] if row and row["c"] is not None else 0)
 
 
 def _normalize_crawl_status(raw_status: object) -> dict[str, object]:
