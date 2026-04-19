@@ -385,6 +385,16 @@ async def lifespan(fastapi_app: FastAPI):
     dbmod.init_db(fastapi_app.state.conn)
     await _reset_datastores_on_start(fastapi_app.state.conn)
     await _restore_newsletter_subscribers_on_start(fastapi_app.state.conn)
+
+    # Start background task to restore pages from AstraDB
+    fastapi_app.state.restore_task = None
+    if astra_utils.has_astra_credentials():
+        async def restore_pages_background():
+            try:
+                await _restore_pages_from_astra_on_start(fastapi_app.state.conn)
+            except Exception:
+                logger.exception("Background page restore from Astra failed")
+        fastapi_app.state.restore_task = asyncio.create_task(restore_pages_background())
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
@@ -455,6 +465,7 @@ async def lifespan(fastapi_app: FastAPI):
     finally:
         stop_event = getattr(fastapi_app.state, "stop_event", None)
         crawler_task = getattr(fastapi_app.state, "crawler_task", None)
+        restore_task = getattr(fastapi_app.state, "restore_task", None)
         conn = getattr(fastapi_app.state, "conn", None)
 
         if stop_event:
@@ -463,6 +474,10 @@ async def lifespan(fastapi_app: FastAPI):
             crawler_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await crawler_task
+        if restore_task:
+            restore_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await restore_task
         if conn:
             conn.close()
             fastapi_app.state.conn = None
