@@ -167,7 +167,12 @@ def _astra_collection_for_runtime():
     return astra_utils.get_astra_collection()
 
 
-def _base_astra_status(astra_collection) -> dict[str, object]:
+def _base_astra_status(
+    astra_collection,
+    *,
+    count_source: str = "unavailable",
+    count_message: str | None = None,
+) -> dict[str, object]:
     return {
         "enabled": astra_utils.is_astra_enabled(),
         "credentials_configured": astra_utils.has_astra_credentials(),
@@ -178,13 +183,20 @@ def _base_astra_status(astra_collection) -> dict[str, object]:
         "document_count_live": None,
         "document_count_estimate": None,
         "count_is_estimate": False,
-        "count_source": "unavailable",
+        "count_source": count_source,
+        "count_message": count_message,
         "count_is_live": False,
     }
 
 
 def astra_runtime_status() -> dict[str, object]:
-    return _base_astra_status(_astra_collection_for_runtime())
+    astra_collection = _astra_collection_for_runtime()
+    count_message = "Livezaehler wird separat geladen." if astra_collection else None
+    return _base_astra_status(
+        astra_collection,
+        count_source="deferred" if astra_collection else "unavailable",
+        count_message=count_message,
+    )
 
 
 def astra_count_snapshot(
@@ -208,12 +220,14 @@ def astra_count_snapshot(
     effective_count = exact_count
     count_is_estimate = False
     count_source = "astra_exact" if exact_count is not None else "unavailable"
+    count_message = "Astra Exact Count verfuegbar." if exact_count is not None else None
 
     if effective_count is None and live:
         live_count = astra_utils.live_document_count(astra_collection)
         if live_count is not None:
             effective_count = live_count
             count_source = "astra_live_scan"
+            count_message = "Astra Live-Scan erfolgreich."
 
     if effective_count is None and allow_estimate:
         estimate_count = astra_utils.estimated_document_count(astra_collection)
@@ -221,15 +235,25 @@ def astra_count_snapshot(
             effective_count = estimate_count
             count_is_estimate = True
             count_source = "astra_estimate"
+            count_message = "Astra Schaetzung verfuegbar."
+
+    if effective_count is None and astra_collection:
+        if live:
+            count_message = "Astra ist verbunden, aber der Livezaehler liefert aktuell keinen Wert."
+        else:
+            count_message = "Astra ist verbunden, aber es wurde noch kein Zaehlwert uebernommen."
 
     snapshot = {
-        **_base_astra_status(astra_collection),
+        **_base_astra_status(
+            astra_collection,
+            count_source=count_source,
+            count_message=count_message,
+        ),
         "document_count": effective_count,
         "document_count_exact": exact_count,
         "document_count_live": live_count,
         "document_count_estimate": estimate_count,
         "count_is_estimate": count_is_estimate,
-        "count_source": count_source,
         "count_is_live": bool(effective_count is not None and not count_is_estimate),
     }
 

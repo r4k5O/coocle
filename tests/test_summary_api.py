@@ -510,7 +510,8 @@ class SummaryApiTests(unittest.TestCase):
         self.assertIsNone(overview_payload["astra"]["document_count_live"])
         self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
         self.assertFalse(overview_payload["astra"]["count_is_estimate"])
-        self.assertEqual(overview_payload["astra"]["count_source"], "unavailable")
+        self.assertEqual(overview_payload["astra"]["count_source"], "deferred")
+        self.assertEqual(overview_payload["astra"]["count_message"], "Livezaehler wird separat geladen.")
 
     def test_pages_live_count_uses_live_scan_when_exact_count_unavailable(self) -> None:
         fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
@@ -577,6 +578,10 @@ class SummaryApiTests(unittest.TestCase):
         self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
         self.assertFalse(overview_payload["astra"]["count_is_estimate"])
         self.assertEqual(overview_payload["astra"]["count_source"], "unavailable")
+        self.assertEqual(
+            overview_payload["astra"]["count_message"],
+            "Astra ist verbunden, aber der Livezaehler liefert aktuell keinen Wert.",
+        )
 
     def test_favicon_route_returns_logo_file(self) -> None:
         response = self.client.get("/favicon.ico")

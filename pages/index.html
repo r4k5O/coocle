@@ -335,18 +335,23 @@
         const liveAstraCount = data.astra?.document_count_live;
         const estimateAstraCount = data.astra?.document_count_estimate;
         const source = data.summary?.indexed_count_source;
+        const astraSource = data.astra?.count_source;
+        const astraMessage = data.astra?.count_message;
 
-        if (source === "astra_exact" && exactAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+        if (source === "astra_exact" && exactAstraCount != null) {
           return `SQLite ${sqliteCount} · Astra live ${exactAstraCount}`;
         }
-        if (source === "astra_live_scan" && liveAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+        if (source === "astra_live_scan" && liveAstraCount != null) {
           return `SQLite ${sqliteCount} · Astra live ${liveAstraCount}`;
         }
-        if (source === "astra_estimate" && estimateAstraCount != null && sqliteCount !== data.summary.indexed_count) {
+        if (source === "astra_estimate" && estimateAstraCount != null) {
           return `SQLite ${sqliteCount} · Astra geschaetzt ~${estimateAstraCount}`;
         }
-        if (data.astra?.connected && source === "sqlite") {
-          return `SQLite ${sqliteCount} · Astra Livezaehler aktuell nicht verfuegbar`;
+        if (data.astra?.connected && astraSource === "deferred") {
+          return `SQLite ${sqliteCount} · ${astraMessage || "Astra Livezaehler wird geladen"}`;
+        }
+        if (data.astra?.connected && source === "sqlite" && astraSource === "unavailable") {
+          return `SQLite ${sqliteCount} · ${astraMessage || "Astra verbunden, aber der Livezaehler liefert aktuell keinen Wert"}`;
         }
         return "Archivierte HTML-Seiten";
       }
