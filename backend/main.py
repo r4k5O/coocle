@@ -338,12 +338,11 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
         if astra_collection is None:
             return
 
-        max_restore = _int_env("COOCLE_RESTORE_PAGES_LIMIT", 1000)
-        logger.info("SQLite is empty, attempting to restore up to %d pages from Astra...", max_restore)
+        logger.info("SQLite is empty, attempting to restore pages from Astra...")
         restored = 0
         seen_urls = set()
 
-        cursor = astra_collection.find({}, projection={"url": 1, "title": 1, "content": 1, "fetched_at": 1, "status_code": 1, "content_type": 1, "language": 1}, limit=max_restore)
+        cursor = astra_collection.find({}, projection={"url": 1, "title": 1, "content": 1, "fetched_at": 1, "status_code": 1, "content_type": 1, "language": 1})
         for doc in cursor:
             url = doc.get("url")
             if not url:
@@ -371,11 +370,11 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
             )
             restored += 1
 
-            if restored % 50 == 0:
+            if restored % 25 == 0:
                 conn.commit()
                 logger.info("Restored %d pages from Astra...", restored)
                 # Add delay to reduce CPU usage
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
 
         conn.commit()
 

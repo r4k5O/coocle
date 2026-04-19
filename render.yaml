@@ -25,9 +25,7 @@ services:
       - key: COOCLE_RESET_DATA_ON_START
         value: "0"
       - key: COOCLE_RESTORE_PAGES_FROM_ASTRA
-        value: "false"
-      - key: COOCLE_RESTORE_PAGES_LIMIT
-        value: "1000"
+        value: "true"
       - key: COOCLE_RESET_DATA_STRICT
         value: "0"
       - key: SMTP_HOST
