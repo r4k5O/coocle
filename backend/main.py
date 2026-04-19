@@ -386,6 +386,36 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
         logger.exception("Page restore from Astra failed; continuing")
 
 
+async def _restore_queue_from_astra_on_start(conn) -> None:
+    queue_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()
+    if queue_count and queue_count["c"] and queue_count["c"] > 0:
+        return
+
+    if not astra_utils.has_astra_credentials():
+        return
+
+    try:
+        meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+        if meta_collection is None:
+            return
+
+        logger.info("SQLite queue is empty, attempting to restore queue from Astra...")
+        restored = await asyncio.to_thread(
+            astra_utils.load_crawl_queue_documents,
+            meta_collection,
+            page_size=100,
+        )
+
+        if restored:
+            dbmod.upsert_queue(conn, restored, batch_size=100)
+            conn.commit()
+            logger.info("Successfully restored %d queued URLs from Astra to SQLite.", len(restored))
+        else:
+            logger.info("No queue entries found in Astra to restore.")
+    except Exception:
+        logger.exception("Queue restore from Astra failed; continuing")
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     astra_utils.reset_astra_cache()
@@ -394,15 +424,16 @@ async def lifespan(fastapi_app: FastAPI):
     await _reset_datastores_on_start(fastapi_app.state.conn)
     await _restore_newsletter_subscribers_on_start(fastapi_app.state.conn)
 
-    # Start background task to restore pages from AstraDB
+    # Start background task to restore pages and queue from AstraDB
     fastapi_app.state.restore_task = None
     if astra_utils.has_astra_credentials() and _truthy_env("COOCLE_RESTORE_PAGES_FROM_ASTRA", default=False):
-        async def restore_pages_background():
+        async def restore_background():
             try:
                 await _restore_pages_from_astra_on_start(fastapi_app.state.conn)
+                await _restore_queue_from_astra_on_start(fastapi_app.state.conn)
             except Exception:
-                logger.exception("Background page restore from Astra failed")
-        fastapi_app.state.restore_task = asyncio.create_task(restore_pages_background())
+                logger.exception("Background restore from Astra failed")
+        fastapi_app.state.restore_task = asyncio.create_task(restore_background())
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
