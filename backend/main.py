@@ -326,10 +326,6 @@ async def _restore_newsletter_subscribers_on_start(conn) -> None:
 
 
 async def _restore_pages_from_astra_on_start(conn) -> None:
-    sqlite_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()
-    if sqlite_count and sqlite_count["c"] and sqlite_count["c"] > 0:
-        return
-
     if not astra_utils.has_astra_credentials():
         return
 
@@ -338,7 +334,7 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
         if astra_collection is None:
             return
 
-        logger.info("SQLite is empty, attempting to restore pages from Astra...")
+        logger.info("Attempting to restore pages from Astra...")
         restored = 0
         seen_urls = set()
 
@@ -387,10 +383,6 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
 
 
 async def _restore_queue_from_astra_on_start(conn) -> None:
-    queue_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()
-    if queue_count and queue_count["c"] and queue_count["c"] > 0:
-        return
-
     if not astra_utils.has_astra_credentials():
         return
 
@@ -399,7 +391,7 @@ async def _restore_queue_from_astra_on_start(conn) -> None:
         if meta_collection is None:
             return
 
-        logger.info("SQLite queue is empty, attempting to restore queue from Astra...")
+        logger.info("Attempting to restore queue from Astra...")
         restored = await asyncio.to_thread(
             astra_utils.load_crawl_queue_documents,
             meta_collection,
