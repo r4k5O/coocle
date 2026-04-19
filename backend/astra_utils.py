@@ -23,6 +23,29 @@ def _chunked(items: list, chunk_size: int):
         yield items[start : start + chunk_size]
 
 
+def _astra_collection_name() -> str:
+    return os.environ.get("ASTRA_DB_COLLECTION", "coocle_pages")
+
+
+def _astra_collection_definition():
+    from astrapy.constants import VectorMetric
+    from astrapy.info import (
+        CollectionDefinition,
+        CollectionVectorOptions,
+        VectorServiceOptions,
+    )
+
+    return CollectionDefinition(
+        vector=CollectionVectorOptions(
+            metric=VectorMetric.COSINE,
+            service=VectorServiceOptions(
+                provider="nvidia",
+                model_name="nvidia/nv-embedqa-e5-v5",
+            ),
+        )
+    )
+
+
 @lru_cache(maxsize=1)
 def get_astra_database():
     from astrapy import DataAPIClient
@@ -53,47 +76,37 @@ def get_astra_meta_collection():
 @lru_cache(maxsize=1)
 def get_astra_collection():
     """
-    Connects to AstraDB and returns the collection object.
-    Creates the collection with NVIDIA Vectorize if it doesn't exist.
+    Returns a fast collection handle for read-heavy paths.
+    This avoids listing collections on the hot path.
     """
     try:
-        from astrapy import DataAPIClient
-        from astrapy.constants import VectorMetric
-        from astrapy.info import (
-            CollectionDefinition,
-            CollectionVectorOptions,
-            VectorServiceOptions,
-        )
-
-        collection_name = os.environ.get("ASTRA_DB_COLLECTION", "coocle_pages")
         database = get_astra_database()
-
-        # check if collection exists
-        col_list = list(database.list_collections())
-        existing = [c.name for c in col_list]
-
-        if collection_name in existing:
-            return database.get_collection(collection_name)
-        
-        # Create with NVIDIA Vectorize
-        # Note: Model must be supported by NVIDIA provider in Astra.
-        # NV-Embed-QA is a standard high-quality choice.
-        definition = CollectionDefinition(
-            vector=CollectionVectorOptions(
-                metric=VectorMetric.COSINE,
-                service=VectorServiceOptions(
-                    provider="nvidia",
-                    model_name="nvidia/nv-embedqa-e5-v5",
-                )
-            )
-        )
-        
-        return database.create_collection(
-            collection_name,
-            definition=definition
-        )
+        return database.get_collection(_astra_collection_name())
     except Exception as e:
         logger.warning("AstraDB unavailable: %s", e)
+        return None
+
+
+@lru_cache(maxsize=1)
+def ensure_astra_collection():
+    """
+    Ensures that the Astra collection exists for write/reset paths.
+    This is intentionally slower than get_astra_collection().
+    """
+    try:
+        database = get_astra_database()
+        collection_name = _astra_collection_name()
+
+        existing = {c.name for c in database.list_collections()}
+        if collection_name in existing:
+            return database.get_collection(collection_name)
+
+        return database.create_collection(
+            collection_name,
+            definition=_astra_collection_definition(),
+        )
+    except Exception as e:
+        logger.warning("AstraDB collection ensure failed: %s", e)
         return None
 
 
@@ -117,6 +130,7 @@ def reset_astra_cache() -> None:
     get_astra_database.cache_clear()
     get_astra_meta_collection.cache_clear()
     get_astra_collection.cache_clear()
+    ensure_astra_collection.cache_clear()
 
 
 def upsert_documents(collection, documents: Iterable[dict], *, batch_size: int = ASTRA_WRITE_BATCH_SIZE) -> int:

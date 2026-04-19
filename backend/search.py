@@ -62,21 +62,25 @@ async def vector_search(
     if _prefer_astra_vector_search():
         astra_col = astra_utils.get_astra_collection()
         if astra_col:
-            results = astra_col.find(
-                sort={"$vectorize": q},
-                limit=limit,
-                include_similarity=True
-            )
-            out = []
-            for doc in results:
-                out.append({
-                    "title": doc.get("title") or doc.get("url") or "Ohne Titel",
-                    "url": doc.get("url") or "",
-                    "snippet": doc.get("content")[:300] + "..." if doc.get("content") else "",
-                    "language": doc.get("language"),
-                    "score": doc.get("$similarity", 0.0)
-                })
-            return out
+            try:
+                results = astra_col.find(
+                    sort={"$vectorize": q},
+                    limit=limit,
+                    include_similarity=True
+                )
+                out = []
+                for doc in results:
+                    out.append({
+                        "title": doc.get("title") or doc.get("url") or "Ohne Titel",
+                        "url": doc.get("url") or "",
+                        "snippet": doc.get("content")[:300] + "..." if doc.get("content") else "",
+                        "language": doc.get("language"),
+                        "score": doc.get("$similarity", 0.0)
+                    })
+                return out
+            except Exception:
+                # Fall back to local vector search when Astra is slow or unavailable.
+                pass
 
     embed_cfg = embed_cfg or env_embed_config()
     async with httpx.AsyncClient(follow_redirects=True) as client:

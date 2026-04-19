@@ -244,7 +244,7 @@ async def _reset_datastores_on_start(conn) -> None:
         return
 
     try:
-        astra_collection = await asyncio.to_thread(astra_utils.get_astra_collection)
+        astra_collection = await asyncio.to_thread(astra_utils.ensure_astra_collection)
         if not astra_collection:
             raise RuntimeError("AstraDB reset requested on startup, but the collection could not be opened.")
 
@@ -311,7 +311,7 @@ async def lifespan(fastapi_app: FastAPI):
 
         if astra_utils.should_use_astra_runtime() and _truthy_env("COOCLE_PREWARM_ASTRA", default=False):
             try:
-                await asyncio.to_thread(astra_utils.get_astra_collection)
+                await asyncio.to_thread(astra_utils.ensure_astra_collection)
             except Exception:
                 logger.exception("Astra prewarm failed; continuing without prewarmed collection")
 

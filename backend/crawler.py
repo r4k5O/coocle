@@ -278,7 +278,7 @@ async def crawl_loop(
     # Initialize Astra if enabled
     astra_col = None
     if astra_utils.should_use_astra_runtime():
-        astra_col = astra_utils.get_astra_collection()
+        astra_col = astra_utils.ensure_astra_collection()
         if astra_col:
             _log.info("AstraDB enabled. Collection: %s", astra_col.full_name)
         else:

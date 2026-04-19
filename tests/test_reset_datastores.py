@@ -226,7 +226,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             return_value=None,
         ), patch.object(
             main.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
             return_value=fake_collection,
         ) as get_collection, patch.object(main.astra_utils, "clear_documents", return_value=9) as clear_documents:
             with patch.object(main.astra_utils, "set_reset_marker") as set_reset_marker, patch.object(
@@ -268,7 +268,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             return_value=None,
         ), patch.object(
             main.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
             side_effect=RuntimeError("astra offline"),
         ) as get_collection:
             with patch.object(main.logger, "warning"), patch.object(main.logger, "exception") as log_exception:
@@ -306,7 +306,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             return_value=None,
         ), patch.object(
             main.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
             side_effect=RuntimeError("astra offline"),
         ):
             with patch.object(main.logger, "warning"), patch.object(main.logger, "exception") as log_exception:
@@ -326,7 +326,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             return_value={"pages": 2, "crawl_queue": 1, "summarization_usage": 4},
         ) as reset_db, patch.object(main.astra_utils, "has_astra_credentials", return_value=False), patch.object(
             main.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
         ) as get_collection:
             with patch.object(main.logger, "warning"):
                 await main._reset_datastores_on_start(object())
@@ -353,7 +353,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             "get_reset_marker",
             return_value={"_id": astra_utils.ASTRA_RESET_MARKER_ID, "deploy_key": "render:abc123"},
         ), patch.object(main.dbmod, "reset_runtime_data") as reset_db, patch.object(
-            main.astra_utils, "get_astra_collection"
+            main.astra_utils, "ensure_astra_collection"
         ) as get_collection:
             await main._reset_datastores_on_start(object())
 
@@ -368,7 +368,7 @@ class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {"COOCLE_RESET_DATA_ON_START": "0"}, clear=False), patch.object(
             main.dbmod,
             "reset_runtime_data",
-        ) as reset_db, patch.object(main.astra_utils, "get_astra_collection") as get_collection:
+        ) as reset_db, patch.object(main.astra_utils, "ensure_astra_collection") as get_collection:
             await main._reset_datastores_on_start(object())
 
         reset_db.assert_not_called()

@@ -228,7 +228,7 @@ class CrawlerTests(unittest.IsolatedAsyncioTestCase):
             crawler.RobotsCache, "get_delay", no_delay
         ), patch.object(crawler.astra_utils, "should_use_astra_runtime", return_value=True), patch.object(
             crawler.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
             return_value=fake_collection,
         ), patch.object(
             crawler.astra_utils,
@@ -314,7 +314,7 @@ class CrawlerTests(unittest.IsolatedAsyncioTestCase):
             crawler.RobotsCache, "get_delay", no_delay
         ), patch.object(crawler.astra_utils, "should_use_astra_runtime", return_value=True), patch.object(
             crawler.astra_utils,
-            "get_astra_collection",
+            "ensure_astra_collection",
             return_value=fake_collection,
         ), patch.object(
             crawler.astra_utils,
