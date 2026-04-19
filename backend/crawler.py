@@ -260,30 +260,95 @@ async def crawl_loop(
         return
     seed_urls = set(seeds_norm)
 
-    db.upsert_queue(conn, [(u, 0, _now_iso()) for u in seeds_norm])
-    _log.info(
-        "Queued %d seed(s). max_pages=%d max_depth=%d same_host_only=%s delay=%.2fs concurrency=%d",
-        len(seeds_norm),
-        cfg.max_pages,
-        cfg.max_depth,
-        cfg.same_host_only,
-        cfg.delay_s,
-        max(1, int(cfg.max_concurrency)),
-    )
-
     robots = RobotsCache()
     embed_cfg = cfg.embed_cfg or (env_embed_config() if cfg.enable_embeddings else None)
     batch_size = int(getattr(db, "DEFAULT_WRITE_BATCH_SIZE", 100))
+    render_runtime = os.environ.get("RENDER", "").strip().lower() == "true"
 
     # Initialize Astra if enabled
     astra_col = None
+    queue_checkpoint_collection = None
     if astra_utils.should_use_astra_runtime():
         astra_col = astra_utils.ensure_astra_collection()
         if astra_col:
             _log.info("AstraDB enabled. Collection: %s", astra_col.full_name)
         else:
             _log.error("AstraDB enabled but collection initialization failed.")
-    restore_from_astra = bool(astra_col and os.environ.get("RENDER", "").strip().lower() == "true")
+        if render_runtime:
+            try:
+                queue_checkpoint_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            except Exception:
+                _log.debug("Astra queue checkpoint metadata unavailable", exc_info=True)
+    restore_from_astra = bool(astra_col and render_runtime)
+
+    async def checkpoint_queue_rows(rows: Iterable[tuple[str, int, str]]) -> None:
+        if queue_checkpoint_collection is None:
+            return
+        queue_rows = list(rows)
+        if not queue_rows:
+            return
+        try:
+            await asyncio.to_thread(
+                astra_utils.upsert_crawl_queue_documents,
+                queue_checkpoint_collection,
+                queue_rows,
+                batch_size=batch_size,
+            )
+        except Exception:
+            _log.debug("Failed to store crawl queue checkpoint rows", exc_info=True)
+
+    async def remove_checkpoint_queue_rows(urls: Iterable[str]) -> None:
+        if queue_checkpoint_collection is None:
+            return
+        queue_urls = [url for url in urls if url]
+        if not queue_urls:
+            return
+        try:
+            await asyncio.to_thread(
+                astra_utils.delete_crawl_queue_documents,
+                queue_checkpoint_collection,
+                queue_urls,
+                batch_size=batch_size,
+            )
+        except Exception:
+            _log.debug("Failed to delete crawl queue checkpoint rows", exc_info=True)
+
+    sqlite_queue_rows = [
+        (str(row["url"]), int(row["depth"]), str(row["discovered_at"]))
+        for row in conn.execute(
+            "SELECT url, depth, discovered_at FROM crawl_queue ORDER BY discovered_at, url"
+        ).fetchall()
+    ]
+    resumed_from_checkpoint = False
+    if sqlite_queue_rows:
+        await checkpoint_queue_rows(sqlite_queue_rows)
+        _log.info("Continuing crawl from %d queued SQLite URL(s).", len(sqlite_queue_rows))
+    elif queue_checkpoint_collection is not None:
+        restored_queue_rows = await asyncio.to_thread(
+            astra_utils.load_crawl_queue_documents,
+            queue_checkpoint_collection,
+            page_size=batch_size,
+        )
+        if restored_queue_rows:
+            db.upsert_queue(conn, restored_queue_rows, batch_size=batch_size)
+            resumed_from_checkpoint = True
+            _log.info("Restored %d queued URL(s) from Astra deploy checkpoint.", len(restored_queue_rows))
+
+    if not resumed_from_checkpoint:
+        seed_queue_rows = [(u, 0, _now_iso()) for u in seeds_norm]
+        db.upsert_queue(conn, seed_queue_rows, batch_size=batch_size)
+        await checkpoint_queue_rows(seed_queue_rows)
+        _log.info(
+            "Queued %d seed(s). max_pages=%d max_depth=%d same_host_only=%s delay=%.2fs concurrency=%d",
+            len(seeds_norm),
+            cfg.max_pages,
+            cfg.max_depth,
+            cfg.same_host_only,
+            cfg.delay_s,
+            max(1, int(cfg.max_concurrency)),
+        )
+    elif resumed_from_checkpoint:
+        _log.info("Resuming crawl from Astra checkpoint without re-adding seeds.")
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         pages_done = 0
@@ -670,6 +735,7 @@ async def crawl_loop(
                 if result.astra_doc is not None:
                     pending_astra_docs.append(result.astra_doc)
 
+                discovered_queue_rows: list[tuple[str, int, str]] = []
                 for queue_row in result.queue_rows:
                     discovered_url = str(queue_row[0])
                     if discovered_url in seen_urls:
@@ -677,6 +743,10 @@ async def crawl_loop(
                     seen_urls.add(discovered_url)
                     frontier_rows.append((discovered_url, int(queue_row[1])))
                     pending_queue_rows.append(queue_row)
+                    discovered_queue_rows.append(queue_row)
+
+                if discovered_queue_rows:
+                    await checkpoint_queue_rows(discovered_queue_rows)
 
                 await publish_status(
                     state=result.state,
@@ -697,6 +767,7 @@ async def crawl_loop(
 
             if processed_queue_urls:
                 db.delete_queue_urls(conn, processed_queue_urls, batch_size=batch_size)
+                await remove_checkpoint_queue_rows(processed_queue_urls)
             if pending_queue_rows:
                 db.upsert_queue(conn, pending_queue_rows, batch_size=batch_size)
 

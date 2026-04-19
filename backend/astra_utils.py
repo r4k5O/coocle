@@ -16,6 +16,8 @@ ASTRA_LIVE_COUNT_PAGE_SIZE = 1000
 ASTRA_LIVE_COUNT_TIMEOUT_MS = 15_000
 ASTRA_META_COLLECTION_NAME = "coocle_internal"
 ASTRA_RESET_MARKER_ID = "__coocle_reset_marker__"
+ASTRA_CRAWL_QUEUE_DOC_TYPE = "crawl_queue"
+ASTRA_CRAWL_QUEUE_DOC_PREFIX = "__coocle_crawl_queue__:"
 
 
 def _chunked(items: list, chunk_size: int):
@@ -276,3 +278,91 @@ def set_reset_marker(meta_collection, deploy_key: str) -> None:
         replacement={"_id": ASTRA_RESET_MARKER_ID, "deploy_key": deploy_key},
         upsert=True,
     )
+
+
+def _crawl_queue_doc_id(url: str) -> str:
+    return f"{ASTRA_CRAWL_QUEUE_DOC_PREFIX}{url}"
+
+
+def upsert_crawl_queue_documents(meta_collection, rows: Iterable[tuple[str, int, str]], *, batch_size: int = ASTRA_WRITE_BATCH_SIZE) -> int:
+    if meta_collection is None:
+        return 0
+
+    documents: list[dict[str, object]] = []
+    for url, depth, discovered_at in rows:
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            continue
+        try:
+            normalized_depth = max(0, int(depth))
+        except (TypeError, ValueError):
+            normalized_depth = 0
+        documents.append(
+            {
+                "_id": _crawl_queue_doc_id(normalized_url),
+                "doc_type": ASTRA_CRAWL_QUEUE_DOC_TYPE,
+                "url": normalized_url,
+                "depth": normalized_depth,
+                "discovered_at": str(discovered_at or ""),
+            }
+        )
+
+    return upsert_documents(meta_collection, documents, batch_size=batch_size)
+
+
+def delete_crawl_queue_documents(meta_collection, urls: Iterable[str], *, batch_size: int = ASTRA_WRITE_BATCH_SIZE) -> int:
+    if meta_collection is None:
+        return 0
+
+    deleted = 0
+    rows = [str(url or "").strip() for url in urls if str(url or "").strip()]
+    for batch in _chunked(rows, batch_size):
+        for url in batch:
+            try:
+                result = meta_collection.delete_many({"_id": _crawl_queue_doc_id(url)})
+                deleted += int(getattr(result, "deleted_count", 0) or 0)
+            except Exception:
+                logger.debug("AstraDB crawl queue delete failed for %s", url, exc_info=True)
+    return deleted
+
+
+def load_crawl_queue_documents(meta_collection, *, page_size: int = ASTRA_WRITE_BATCH_SIZE) -> list[tuple[str, int, str]]:
+    if meta_collection is None:
+        return []
+
+    documents: list[dict] = []
+    try:
+        next_page_state = None
+        while True:
+            find_kwargs: dict[str, object] = {"limit": max(1, int(page_size))}
+            if next_page_state:
+                find_kwargs["initial_page_state"] = next_page_state
+
+            cursor = meta_collection.find({"doc_type": ASTRA_CRAWL_QUEUE_DOC_TYPE}, **find_kwargs)
+            page = cursor.fetch_next_page()
+            documents.extend(list(getattr(page, "results", []) or []))
+            next_page_state = getattr(page, "next_page_state", None)
+            if not next_page_state:
+                break
+    except Exception:
+        logger.debug("AstraDB crawl queue page fetch failed", exc_info=True)
+        try:
+            cursor = meta_collection.find({"doc_type": ASTRA_CRAWL_QUEUE_DOC_TYPE}, limit=max(1, int(page_size)))
+            documents.extend(list(cursor))
+        except Exception:
+            logger.debug("AstraDB crawl queue load failed", exc_info=True)
+            return []
+
+    rows: list[tuple[str, int, str]] = []
+    for document in documents:
+        url = str(document.get("url") or "").strip()
+        if not url:
+            continue
+        try:
+            depth = max(0, int(document.get("depth") or 0))
+        except (TypeError, ValueError):
+            depth = 0
+        rows.append((url, depth, str(document.get("discovered_at") or "")))
+
+    rows.sort(key=lambda row: (row[2], row[0]))
+    return rows

@@ -23,8 +23,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install actionlint
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.8/actionlint_1.7.8_linux_amd64.tar.gz -o actionlint.tgz
+          tar -xzf actionlint.tgz actionlint
+          chmod +x actionlint
+          sudo mv actionlint /usr/local/bin/actionlint
+
       - name: Lint GitHub Actions workflow
-        uses: rhysd/actionlint@v1
+        run: actionlint
 
   config:
     name: Config Validation
@@ -39,6 +46,8 @@ jobs:
           test -f render.yaml
           grep -F "healthCheckPath: /api/healthz" render.yaml
           grep -F "autoDeployTrigger: checksPass" render.yaml
+          grep -F 'key: COOCLE_RESET_DATA_ON_START' render.yaml
+          grep -F 'value: "0"' render.yaml
           grep -F '@app.get("/api/healthz")' backend/main.py
           grep -F 'def api_healthz' backend/main.py
           grep -F 'app.mount("/", StaticFiles' backend/main.py

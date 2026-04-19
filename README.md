@@ -123,13 +123,13 @@ node --test tests/app.test.js
 
 Fuer stabilere Starts auf Render nutzt der Healthcheck jetzt die leichte Route `/api/healthz` statt `/api/stats`, und `COOCLE_PREWARM_ASTRA` ist dort deaktiviert. Dadurch blockieren Astra-Warmup und Count-Abfragen den Deploy-Healthcheck nicht mehr.
 
-Zusätzlich setzt die Render-Konfiguration `COOCLE_RESET_DATA_ON_START=1`. Dadurch wird beim Start des neuen Service-Prozesses die SQLite-Datenbank geleert und, sobald Astra-Credentials vorhanden sind, auch die AstraDB-Collection komplett geleert.
+Die Render-Konfiguration setzt `COOCLE_RESET_DATA_ON_START=0`, damit neue Deploys den bestehenden Crawl-Stand nicht mehr loeschen.
 
 Wichtig:
 
-- Das ist absichtlich destruktiv und eignet sich nur fuer Demo- oder Test-Deployments.
-- Auf Render wird der Reset jetzt nur einmal pro Deploy ausgefuehrt. Als Marker dient `RENDER_GIT_COMMIT`, gespeichert in einer kleinen Astra-Meta-Collection.
-- Auf Render ist `COOCLE_RESET_DATA_STRICT=0` gesetzt, damit ein voruebergehender Astra- oder Reset-Fehler nicht den kompletten Backend-Start blockiert.
+- Auf Render legt der Crawler seine Queue jetzt zusaetzlich in einer kleinen Astra-Meta-Collection ab.
+- Wenn ein neuer Deploy mit einer frischen lokalen SQLite-Datei startet, wird diese Queue aus Astra wiederhergestellt und vom letzten bekannten Stand aus weiter abgearbeitet.
+- Falls noch keine gespeicherte Queue existiert, startet der Crawler wie bisher mit den Seeds.
 
 ## Für GitHub
 

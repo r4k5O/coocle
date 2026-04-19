@@ -265,6 +265,190 @@ class CrawlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["title"], "Known")
         self.assertIn("Astra", row["content"])
 
+    async def test_crawl_loop_restores_render_queue_checkpoint_without_readding_seeds(self) -> None:
+        conn = db.connect(f"file:crawler_restore_checkpoint_{id(self)}?mode=memory&cache=shared")
+        db.init_db(conn)
+        calls: list[str] = []
+        fake_collection = SimpleNamespace(full_name="testspace.coocle_pages")
+        fake_meta_collection = object()
+
+        class FakeResponse:
+            def __init__(self, url: str):
+                self.status_code = 200
+                self.headers = {"content-type": "text/html"}
+                self.text = f"<html><title>{url}</title><body>checkpoint</body></html>"
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, url, timeout=None, headers=None):
+                calls.append(str(url))
+                return FakeResponse(str(url))
+
+        async def always_allowed(self, client, url, user_agent):
+            return True
+
+        def no_delay(self, url, user_agent):
+            return 0.0
+
+        cfg = crawler.CrawlConfig(
+            max_pages=5,
+            max_depth=1,
+            delay_s=0.0,
+            same_host_only=False,
+            max_concurrency=1,
+        )
+
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=False), patch(
+            "backend.crawler.httpx.AsyncClient", FakeClient
+        ), patch.object(crawler.RobotsCache, "allowed", always_allowed), patch.object(
+            crawler.RobotsCache, "get_delay", no_delay
+        ), patch.object(crawler.astra_utils, "should_use_astra_runtime", return_value=True), patch.object(
+            crawler.astra_utils,
+            "ensure_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(
+            crawler.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            crawler.astra_utils,
+            "load_crawl_queue_documents",
+            return_value=[("https://alpha.test/resume", 1, "2026-04-18T12:00:00")],
+        ) as load_queue, patch.object(
+            crawler.astra_utils,
+            "upsert_crawl_queue_documents",
+            return_value=0,
+        ) as save_queue, patch.object(
+            crawler.astra_utils,
+            "delete_crawl_queue_documents",
+            return_value=1,
+        ), patch.object(
+            crawler.astra_utils,
+            "get_document_by_id",
+            return_value=None,
+        ), patch.object(
+            crawler.astra_utils,
+            "upsert_documents",
+            return_value=0,
+        ):
+            await crawler.crawl_loop(
+                conn=conn,
+                db=db,
+                seeds=["https://alpha.test/root"],
+                cfg=cfg,
+                stop_event=asyncio.Event(),
+                run_forever=False,
+            )
+
+        row = conn.execute("SELECT url FROM pages WHERE url = ?", ("https://alpha.test/resume",)).fetchone()
+        conn.close()
+
+        load_queue.assert_called_once_with(fake_meta_collection, page_size=db.DEFAULT_WRITE_BATCH_SIZE)
+        save_queue.assert_not_called()
+        self.assertEqual(calls, ["https://alpha.test/resume"])
+        self.assertEqual(row["url"], "https://alpha.test/resume")
+
+    async def test_crawl_loop_persists_queue_checkpoint_updates_on_render(self) -> None:
+        conn = db.connect(f"file:crawler_checkpoint_updates_{id(self)}?mode=memory&cache=shared")
+        db.init_db(conn)
+        fake_collection = SimpleNamespace(full_name="testspace.coocle_pages")
+        fake_meta_collection = object()
+
+        class FakeResponse:
+            def __init__(self, url: str):
+                self.status_code = 200
+                self.headers = {"content-type": "text/html"}
+                if url == "https://alpha.test/root":
+                    self.text = '<html><title>Root</title><body><a href="/child">Child</a></body></html>'
+                else:
+                    self.text = "<html><title>Child</title><body>child body</body></html>"
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, url, timeout=None, headers=None):
+                return FakeResponse(str(url))
+
+        async def always_allowed(self, client, url, user_agent):
+            return True
+
+        def no_delay(self, url, user_agent):
+            return 0.0
+
+        cfg = crawler.CrawlConfig(
+            max_pages=2,
+            max_depth=2,
+            delay_s=0.0,
+            same_host_only=False,
+            max_concurrency=1,
+        )
+
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=False), patch(
+            "backend.crawler.httpx.AsyncClient", FakeClient
+        ), patch.object(crawler.RobotsCache, "allowed", always_allowed), patch.object(
+            crawler.RobotsCache, "get_delay", no_delay
+        ), patch.object(crawler.astra_utils, "should_use_astra_runtime", return_value=True), patch.object(
+            crawler.astra_utils,
+            "ensure_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(
+            crawler.astra_utils,
+            "get_astra_meta_collection",
+            return_value=fake_meta_collection,
+        ), patch.object(
+            crawler.astra_utils,
+            "load_crawl_queue_documents",
+            return_value=[],
+        ), patch.object(
+            crawler.astra_utils,
+            "get_document_by_id",
+            return_value=None,
+        ), patch.object(
+            crawler.astra_utils,
+            "upsert_documents",
+            return_value=0,
+        ), patch.object(
+            crawler.astra_utils,
+            "upsert_crawl_queue_documents",
+            return_value=1,
+        ) as save_queue, patch.object(
+            crawler.astra_utils,
+            "delete_crawl_queue_documents",
+            return_value=1,
+        ) as delete_queue:
+            await crawler.crawl_loop(
+                conn=conn,
+                db=db,
+                seeds=["https://alpha.test/root"],
+                cfg=cfg,
+                stop_event=asyncio.Event(),
+                run_forever=False,
+            )
+
+        conn.close()
+
+        saved_rows = [call.args[1] for call in save_queue.call_args_list]
+        deleted_urls = [call.args[1] for call in delete_queue.call_args_list]
+
+        self.assertIn([("https://alpha.test/root", 0, saved_rows[0][0][2])], saved_rows)
+        self.assertIn([("https://alpha.test/child", 1, saved_rows[1][0][2])], saved_rows)
+        self.assertEqual(deleted_urls, [["https://alpha.test/root"], ["https://alpha.test/child"]])
+
     async def test_crawl_loop_refetches_seed_urls_even_when_known_in_astra(self) -> None:
         conn = db.connect(f"file:crawler_refetch_seed_astra_{id(self)}?mode=memory&cache=shared")
         db.init_db(conn)

@@ -199,6 +199,85 @@ class AstraResetTests(unittest.TestCase):
         self.assertEqual(collection.replacement["deploy_key"], "render:abc123")
         self.assertTrue(collection.upsert)
 
+    def test_crawl_queue_checkpoint_roundtrip_uses_meta_collection_documents(self) -> None:
+        class FakeCursor:
+            def __init__(self, documents) -> None:
+                self._documents = list(documents)
+
+            def fetch_next_page(self):
+                return SimpleNamespace(results=list(self._documents), next_page_state=None)
+
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.replacements: list[dict] = []
+                self.deleted_filters: list[dict] = []
+
+            def find_one_and_replace(self, *, filter, replacement, upsert):
+                self.replacements.append({"filter": filter, "replacement": replacement, "upsert": upsert})
+
+            def delete_many(self, filter):
+                self.deleted_filters.append(filter)
+                return SimpleNamespace(deleted_count=1)
+
+            def find(self, filter, **kwargs):
+                self.find_filter = filter
+                self.find_kwargs = kwargs
+                return FakeCursor(
+                    [
+                        {
+                            "_id": "__coocle_crawl_queue__:https://alpha.test/b",
+                            "doc_type": astra_utils.ASTRA_CRAWL_QUEUE_DOC_TYPE,
+                            "url": "https://alpha.test/b",
+                            "depth": 2,
+                            "discovered_at": "2026-04-18T12:05:00",
+                        },
+                        {
+                            "_id": "__coocle_crawl_queue__:https://alpha.test/a",
+                            "doc_type": astra_utils.ASTRA_CRAWL_QUEUE_DOC_TYPE,
+                            "url": "https://alpha.test/a",
+                            "depth": 1,
+                            "discovered_at": "2026-04-18T12:00:00",
+                        },
+                    ]
+                )
+
+        collection = FakeCollection()
+
+        written = astra_utils.upsert_crawl_queue_documents(
+            collection,
+            [
+                ("https://alpha.test/b", 2, "2026-04-18T12:05:00"),
+                ("https://alpha.test/a", 1, "2026-04-18T12:00:00"),
+            ],
+            batch_size=10,
+        )
+        restored = astra_utils.load_crawl_queue_documents(collection, page_size=10)
+        deleted = astra_utils.delete_crawl_queue_documents(
+            collection,
+            ["https://alpha.test/a", "https://alpha.test/b"],
+            batch_size=10,
+        )
+
+        self.assertEqual(written, 2)
+        self.assertEqual(collection.replacements[0]["filter"]["_id"], "__coocle_crawl_queue__:https://alpha.test/b")
+        self.assertTrue(collection.replacements[0]["upsert"])
+        self.assertEqual(collection.find_filter, {"doc_type": astra_utils.ASTRA_CRAWL_QUEUE_DOC_TYPE})
+        self.assertEqual(
+            restored,
+            [
+                ("https://alpha.test/a", 1, "2026-04-18T12:00:00"),
+                ("https://alpha.test/b", 2, "2026-04-18T12:05:00"),
+            ],
+        )
+        self.assertEqual(deleted, 2)
+        self.assertEqual(
+            collection.deleted_filters,
+            [
+                {"_id": "__coocle_crawl_queue__:https://alpha.test/a"},
+                {"_id": "__coocle_crawl_queue__:https://alpha.test/b"},
+            ],
+        )
+
 
 class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_reset_clears_sqlite_and_astra_when_credentials_exist(self) -> None:
