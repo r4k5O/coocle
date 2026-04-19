@@ -411,6 +411,18 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(payload["indexed_pages"][0]["url"], "https://example.com/live-batch")
         self.assertEqual(payload["indexed_pages"][0]["storage_state"], "pending_batch")
 
+    def test_pages_overview_tolerates_legacy_or_malformed_crawl_status(self) -> None:
+        self.main_module.app.state.crawl_status = ["broken"]
+
+        response = self.client.get("/api/pages/overview")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["active_scans"], 0)
+        self.assertEqual(payload["summary"]["pending_indexed_count"], 0)
+        self.assertEqual(payload["current_scans"], [])
+        self.assertEqual(payload["crawler_status"]["message"], "Crawlerstatus unbekannt")
+
     def test_stats_use_exact_astra_count_when_available(self) -> None:
         fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
 

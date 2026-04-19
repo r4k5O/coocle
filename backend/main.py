@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db as dbmod
 from . import astra_utils
 from .crawler import CrawlConfig, crawl_loop
+from .pages_service import build_pages_live_count_payload, build_pages_overview_payload, build_stats_payload
 from .search import search as fts_search
 from .search import vector_search as vec_search
 from .summarize import OllamaChatConfig, SummaryResult, env_chat_config, summarize_results
@@ -34,7 +35,6 @@ ROOT = Path(__file__).resolve().parents[1]
 FREE_SUMMARY_LIMIT = 10
 logger = logging.getLogger(__name__)
 SUMMARY_CONTEXT_LIMIT = 5
-ASTRA_COUNT_CACHE_TTL_S = 30.0
 
 
 class SlidingWindowRateLimiter:
@@ -185,105 +185,6 @@ def _enrich_results_for_summary(conn, results: list[dict], limit: int = SUMMARY_
                 prepared["page_content"] = row["content"]
         enriched.append(prepared)
     return enriched
-
-
-def _excerpt(text: str | None, limit: int = 220) -> str:
-    value = " ".join(str(text or "").split())
-    if len(value) <= limit:
-        return value
-    return f"{value[: max(1, limit - 1)].rstrip()}…"
-
-
-def _astra_collection_for_runtime():
-    if not astra_utils.has_astra_credentials():
-        return None
-    return astra_utils.get_astra_collection()
-
-
-def _astra_document_count_exact(collection) -> int | None:
-    return astra_utils.exact_document_count(collection)
-
-
-def _astra_document_count_live(collection) -> int | None:
-    return astra_utils.live_document_count(collection)
-
-
-def _astra_document_count_estimate(collection) -> int | None:
-    return astra_utils.estimated_document_count(collection)
-
-
-def _astra_runtime_status() -> dict[str, object]:
-    astra_collection = _astra_collection_for_runtime()
-    return {
-        "enabled": astra_utils.is_astra_enabled(),
-        "credentials_configured": astra_utils.has_astra_credentials(),
-        "connected": bool(astra_collection),
-        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
-        "document_count": None,
-        "document_count_exact": None,
-        "document_count_live": None,
-        "document_count_estimate": None,
-        "count_is_estimate": False,
-        "count_source": "unavailable",
-        "count_is_live": False,
-    }
-
-
-def _astra_count_snapshot(
-    request: Request,
-    *,
-    live: bool = False,
-    allow_estimate: bool = True,
-) -> dict[str, object]:
-    if not live:
-        now = time.monotonic()
-        cached = getattr(request.app.state, "astra_count_cache", None)
-        if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
-            snapshot = cached.get("snapshot")
-            if isinstance(snapshot, dict):
-                return dict(snapshot)
-
-    astra_collection = _astra_collection_for_runtime()
-    exact_count = _astra_document_count_exact(astra_collection)
-    live_count = None
-    estimate_count = None
-    effective_count = exact_count
-    count_is_estimate = False
-    count_source = "astra_exact" if exact_count is not None else "unavailable"
-
-    if effective_count is None and live:
-        live_count = _astra_document_count_live(astra_collection)
-        if live_count is not None:
-            effective_count = live_count
-            count_source = "astra_live_scan"
-
-    if effective_count is None:
-        if allow_estimate:
-            estimate_count = _astra_document_count_estimate(astra_collection)
-            if estimate_count is not None:
-                effective_count = estimate_count
-                count_is_estimate = True
-                count_source = "astra_estimate"
-
-    snapshot = {
-        "enabled": astra_utils.is_astra_enabled(),
-        "credentials_configured": astra_utils.has_astra_credentials(),
-        "connected": bool(astra_collection),
-        "collection": getattr(astra_collection, "full_name", None) if astra_collection else None,
-        "document_count": effective_count,
-        "document_count_exact": exact_count,
-        "document_count_live": live_count,
-        "document_count_estimate": estimate_count,
-        "count_is_estimate": count_is_estimate,
-        "count_source": count_source,
-        "count_is_live": bool(effective_count is not None and not count_is_estimate),
-    }
-    if not live:
-        request.app.state.astra_count_cache = {
-            "expires_at": time.monotonic() + ASTRA_COUNT_CACHE_TTL_S,
-            "snapshot": snapshot,
-        }
-    return dict(snapshot)
 
 
 def _reset_deploy_key() -> str | None:
@@ -604,22 +505,7 @@ async def get_credits(request: Request):
 @app.get("/api/stats")
 def api_stats(request: Request):
     conn = _conn_from_request(request)
-    sqlite_pages = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
-    queued = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-    astra_status = _astra_count_snapshot(request, live=False, allow_estimate=True)
-    astra_count = astra_status.get("document_count")
-    pages = max(int(sqlite_pages), int(astra_count or 0))
-    return {
-        "pages": pages,
-        "queued": queued,
-        "db": str(_db_path()),
-        "sqlite_pages": sqlite_pages,
-        "astra_pages": astra_count,
-        "astra_pages_exact": astra_status.get("document_count_exact"),
-        "astra_pages_estimate": astra_status.get("document_count_estimate"),
-        "astra_pages_is_estimate": astra_status.get("count_is_estimate"),
-        "astra_count_source": astra_status.get("count_source"),
-    }
+    return build_stats_payload(request, conn, db_path=str(_db_path()))
 
 
 @app.get("/api/pages/overview")
@@ -629,171 +515,18 @@ def api_pages_overview(
     queue_limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ):
     conn = _conn_from_request(request)
-    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
-    queued_count = conn.execute("SELECT COUNT(*) AS c FROM crawl_queue").fetchone()["c"]
-
-    indexed_rows = conn.execute(
-        """
-        SELECT url, title, content, fetched_at, status_code, content_type, language
-        FROM pages
-        ORDER BY datetime(COALESCE(fetched_at, '1970-01-01T00:00:00')) DESC, id DESC
-        LIMIT ?
-        """,
-        (indexed_limit,),
-    ).fetchall()
-    queue_rows = conn.execute(
-        """
-        SELECT url, depth, discovered_at, last_error
-        FROM crawl_queue
-        ORDER BY datetime(COALESCE(discovered_at, '1970-01-01T00:00:00')) ASC, url ASC
-        LIMIT ?
-        """,
-        (queue_limit,),
-    ).fetchall()
-
-    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
-    pending_indexed_pages = [
-        page
-        for page in (crawl_status.get("pending_indexed_pages") or [])
-        if isinstance(page, dict) and page.get("url")
-    ]
-    persisted_indexed_pages = [
-        {
-            "url": row["url"],
-            "title": row["title"] or row["url"],
-            "excerpt": _excerpt(row["content"]),
-            "fetched_at": row["fetched_at"],
-            "status_code": row["status_code"],
-            "content_type": row["content_type"],
-            "language": row["language"],
-        }
-        for row in indexed_rows
-    ]
-
-    pending_urls = list({str(page["url"]) for page in pending_indexed_pages})
-    existing_pending_urls: set[str] = set()
-    if pending_urls:
-        placeholders = ", ".join("?" for _ in pending_urls)
-        existing_pending_urls = {
-            str(row["url"])
-            for row in conn.execute(
-                f"SELECT url FROM pages WHERE url IN ({placeholders})",
-                pending_urls,
-            ).fetchall()
-        }
-
-    indexed_pages: list[dict] = []
-    indexed_seen_urls: set[str] = set()
-    for item in pending_indexed_pages + persisted_indexed_pages:
-        url = str(item["url"])
-        if url in indexed_seen_urls:
-            continue
-        indexed_seen_urls.add(url)
-        indexed_pages.append(item)
-        if len(indexed_pages) >= indexed_limit:
-            break
-
-    current_scans = [
-        scan
-        for scan in (crawl_status.get("current_scans") or [])
-        if isinstance(scan, dict) and scan.get("url")
-    ]
-    if not current_scans:
-        current_url = crawl_status.get("current_url")
-        if current_url:
-            current_scans.append(
-                {
-                    "url": current_url,
-                    "depth": crawl_status.get("current_depth"),
-                    "state": crawl_status.get("state"),
-                    "message": crawl_status.get("message"),
-                    "updated_at": crawl_status.get("updated_at"),
-                }
-            )
-
-    astra_status = _astra_runtime_status()
-    astra_count = astra_status.get("document_count")
-
-    visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
-    effective_indexed_count = int(visible_indexed_count)
-    effective_count_is_estimate = False
-    effective_count_source = "sqlite"
-    if astra_count is not None and int(astra_count) > effective_indexed_count:
-        effective_indexed_count = int(astra_count)
-        effective_count_is_estimate = bool(astra_status.get("count_is_estimate"))
-        effective_count_source = str(astra_status.get("count_source") or "astra")
-
-    return {
-        "summary": {
-            "indexed_count": effective_indexed_count,
-            "indexed_count_is_estimate": effective_count_is_estimate,
-            "indexed_count_source": effective_count_source,
-            "sqlite_indexed_count": indexed_count,
-            "queued_count": queued_count,
-            "active_scans": len(current_scans),
-            "pending_indexed_count": len(set(pending_urls)),
-        },
-        "astra": astra_status,
-        "crawler_status": crawl_status,
-        "current_scans": current_scans,
-        "indexed_pages": indexed_pages,
-        "queued_pages": [
-            {
-                "url": row["url"],
-                "depth": row["depth"],
-                "discovered_at": row["discovered_at"],
-                "last_error": row["last_error"],
-            }
-            for row in queue_rows
-        ],
-    }
+    return build_pages_overview_payload(
+        request,
+        conn,
+        indexed_limit=indexed_limit,
+        queue_limit=queue_limit,
+    )
 
 
 @app.get("/api/pages/live-count")
 def api_pages_live_count(request: Request):
     conn = _conn_from_request(request)
-    indexed_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()["c"]
-
-    crawl_status = dict(getattr(request.app.state, "crawl_status", {}))
-    pending_indexed_pages = [
-        page
-        for page in (crawl_status.get("pending_indexed_pages") or [])
-        if isinstance(page, dict) and page.get("url")
-    ]
-    pending_urls = list({str(page["url"]) for page in pending_indexed_pages})
-    existing_pending_urls: set[str] = set()
-    if pending_urls:
-        placeholders = ", ".join("?" for _ in pending_urls)
-        existing_pending_urls = {
-            str(row["url"])
-            for row in conn.execute(
-                f"SELECT url FROM pages WHERE url IN ({placeholders})",
-                pending_urls,
-            ).fetchall()
-        }
-
-    astra_status = _astra_count_snapshot(request, live=True, allow_estimate=False)
-    astra_count = astra_status.get("document_count")
-
-    visible_indexed_count = indexed_count + len(set(pending_urls) - existing_pending_urls)
-    effective_indexed_count = int(visible_indexed_count)
-    effective_count_is_estimate = False
-    effective_count_source = "sqlite"
-    if astra_count is not None and int(astra_count) > effective_indexed_count:
-        effective_indexed_count = int(astra_count)
-        effective_count_is_estimate = bool(astra_status.get("count_is_estimate"))
-        effective_count_source = str(astra_status.get("count_source") or "astra")
-
-    return {
-        "summary": {
-            "indexed_count": effective_indexed_count,
-            "indexed_count_is_estimate": effective_count_is_estimate,
-            "indexed_count_source": effective_count_source,
-            "sqlite_indexed_count": indexed_count,
-            "pending_indexed_count": len(set(pending_urls)),
-        },
-        "astra": astra_status,
-    }
+    return build_pages_live_count_payload(request, conn)
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():

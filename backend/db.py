@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS summarization_usage (
   PRIMARY KEY (ip, day)
 );
 
--- Full-text index (FTS5)
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
   url,
   title,
@@ -67,6 +66,7 @@ CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
 END;
 """
 
+
 PAGE_UPSERT_SQL = """
 INSERT INTO pages(
   url, title, content, fetched_at, status_code, content_type,
@@ -88,9 +88,41 @@ ON CONFLICT(url) DO UPDATE SET
 """
 
 
+LEGACY_ADDITIVE_COLUMNS = {
+    "pages": {
+        "fetched_at": "TEXT",
+        "status_code": "INTEGER",
+        "content_type": "TEXT",
+        "embedding": "BLOB",
+        "embedding_dim": "INTEGER",
+        "embedding_norm": "REAL",
+        "embedding_model": "TEXT",
+        "language": "TEXT",
+    },
+    "crawl_queue": {
+        "last_error": "TEXT",
+    },
+}
+
+
 def _chunked(items: list, chunk_size: int):
-    for start in range(0, len(items), chunk_size):
-        yield items[start : start + chunk_size]
+    size = max(1, int(chunk_size))
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _ensure_legacy_columns(conn: sqlite3.Connection) -> None:
+    for table_name, expected_columns in LEGACY_ADDITIVE_COLUMNS.items():
+        existing_columns = _table_columns(conn, table_name)
+        for column_name, column_type in expected_columns.items():
+            if column_name in existing_columns:
+                continue
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
@@ -98,6 +130,7 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     use_uri = target.startswith("file:")
     if target != ":memory:" and not use_uri:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
+
     conn = sqlite3.connect(target, check_same_thread=False, uri=use_uri)
     conn.row_factory = sqlite3.Row
     return conn
@@ -105,37 +138,7 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    # Lightweight migrations for existing DBs created before newer crawl metadata and
-    # embedding columns existed.
-    for stmt in (
-        "ALTER TABLE pages ADD COLUMN fetched_at TEXT",
-        "ALTER TABLE pages ADD COLUMN status_code INTEGER",
-        "ALTER TABLE pages ADD COLUMN content_type TEXT",
-        "ALTER TABLE pages ADD COLUMN embedding BLOB",
-        "ALTER TABLE pages ADD COLUMN embedding_dim INTEGER",
-        "ALTER TABLE pages ADD COLUMN embedding_norm REAL",
-        "ALTER TABLE pages ADD COLUMN embedding_model TEXT",
-        "ALTER TABLE pages ADD COLUMN language TEXT",
-        "ALTER TABLE crawl_queue ADD COLUMN last_error TEXT",
-    ):
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass
-    
-    # Ensure summarization_usage table exists (legacy check if script was already run)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS summarization_usage (
-            ip TEXT NOT NULL,
-            day TEXT NOT NULL,
-            count INTEGER DEFAULT 0,
-            PRIMARY KEY (ip, day)
-        )
-    """)
-
-    # Keep the external-content FTS index authoritative on startup. Older databases may
-    # already contain rows in `pages` from before `pages_fts` existed, and simple row
-    # counts are not enough to detect that kind of drift reliably.
+    _ensure_legacy_columns(conn)
     conn.execute("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')")
     conn.commit()
 
@@ -150,9 +153,9 @@ def upsert_queue(
     if not rows:
         return 0
 
-    cur = conn.cursor()
+    cursor = conn.cursor()
     for batch in _chunked(rows, batch_size):
-        cur.executemany(
+        cursor.executemany(
             """
             INSERT INTO crawl_queue(url, depth, discovered_at)
             VALUES (?, ?, ?)
@@ -178,9 +181,9 @@ def delete_queue_urls(
     deleted = 0
     for batch in _chunked(rows, batch_size):
         placeholders = ", ".join("?" for _ in batch)
-        cur = conn.execute(f"DELETE FROM crawl_queue WHERE url IN ({placeholders})", batch)
+        cursor = conn.execute(f"DELETE FROM crawl_queue WHERE url IN ({placeholders})", batch)
         conn.commit()
-        deleted += max(cur.rowcount, 0)
+        deleted += max(int(cursor.rowcount or 0), 0)
     return deleted
 
 
@@ -194,22 +197,21 @@ def upsert_pages(
     if not page_rows:
         return 0
 
-    cur = conn.cursor()
+    cursor = conn.cursor()
     for batch in _chunked(page_rows, batch_size):
-        cur.executemany(PAGE_UPSERT_SQL, batch)
+        cursor.executemany(PAGE_UPSERT_SQL, batch)
         conn.commit()
     return len(page_rows)
 
 
 def reset_runtime_data(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for table in ("pages", "crawl_queue", "summarization_usage"):
-        row = conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
-        counts[table] = int(row["count"] if row else 0)
+    for table_name in ("pages", "crawl_queue", "summarization_usage"):
+        row = conn.execute(f"SELECT COUNT(*) AS count FROM {table_name}").fetchone()
+        counts[table_name] = int(row["count"] if row else 0)
 
     conn.execute("DELETE FROM pages")
     conn.execute("DELETE FROM crawl_queue")
     conn.execute("DELETE FROM summarization_usage")
     conn.commit()
     return counts
-
