@@ -258,6 +258,17 @@
         <h3>Newsletter senden</h3>
         <p>Newsletter werden direkt über SMTP versendet – keine externen Dienste erforderlich. Unterstützt HTML und Text-Inhalte.</p>
 
+        <h3>Admin-Token</h3>
+        <p>Das <strong>Admin-Token</strong> (<code>COOCLE_NEWSLETTER_ADMIN_TOKEN</code>) ist ein geheimes Passwort, das erforderlich ist, um geschützte Newsletter-Aktionen auszuführen:</p>
+        <ul>
+          <li><code>/api/newsletter/send</code> – Newsletter an alle Abonnenten senden</li>
+          <li><code>/api/newsletter/check-milestones</code> – Meilensteine prüfen und Newsletter senden</li>
+        </ul>
+        <p>Das Token muss als HTTP-Header gesendet werden:</p>
+        <pre><code>X-Admin-Token: dein-geheimes-token</code></pre>
+        <p><strong>Wichtig:</strong> Das Token sollte sicher generiert (z.B. mit <code>openssl rand -base64 32</code>) und niemals öffentlich geteilt werden. Es wird als Umgebungsvariable konfiguriert:</p>
+        <pre><code>COOCLE_NEWSLETTER_ADMIN_TOKEN=dein-geheimes-token-hier</code></pre>
+
         <h3>Meilenstein-Newsletter</h3>
         <p>Das System erkennt automatisch Meilensteine und versendet gestaltete Newsletter:</p>
         <ul>

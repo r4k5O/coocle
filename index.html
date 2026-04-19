@@ -72,29 +72,7 @@
             <p class="newsletterIntro">
               Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
             </p>
-            <form id="newsletterForm" class="newsletterForm" autocomplete="on">
-              <label class="srOnly" for="newsletterName">Name</label>
-              <input
-                id="newsletterName"
-                class="newsletterInput"
-                name="name"
-                type="text"
-                placeholder="Name (optional)"
-                maxlength="120"
-              />
-              <label class="srOnly" for="newsletterEmail">E-Mail</label>
-              <input
-                id="newsletterEmail"
-                class="newsletterInput"
-                name="email"
-                type="email"
-                placeholder="dein.name@example.com"
-                required
-                autocomplete="email"
-              />
-              <button id="newsletterBtn" class="actionBtn" type="submit">Newsletter abonnieren</button>
-            </form>
-            <div id="newsletterStatus" class="newsletterStatus" aria-live="polite"></div>
+            <button id="openNewsletterBtn" class="actionBtn" type="button">Newsletter abonnieren</button>
             <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
           </section>
 
@@ -170,6 +148,52 @@
       </div>
       <div class="modalFooter">
         <button id="saveSettings" class="actionBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Newsletter Modal -->
+  <div id="newsletterModal" class="modal" hidden>
+    <div class="modalContent">
+      <div class="modalHeader">
+        <h2>Newsletter abonnieren</h2>
+        <button id="closeNewsletter" class="closeBtn">&times;</button>
+      </div>
+      <div class="modalBody">
+        <section class="settingsSection">
+          <h3>Produkt-Updates direkt per Mail</h3>
+          <p class="newsletterIntro">
+            Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
+          </p>
+          <form id="newsletterForm" class="newsletterForm" autocomplete="on">
+            <div class="formGroup">
+              <label for="newsletterName">Name (optional)</label>
+              <input
+                id="newsletterName"
+                name="name"
+                type="text"
+                placeholder="Dein Name"
+                maxlength="120"
+              />
+            </div>
+            <div class="formGroup">
+              <label for="newsletterEmail">E-Mail</label>
+              <input
+                id="newsletterEmail"
+                name="email"
+                type="email"
+                placeholder="dein.name@example.com"
+                required
+                autocomplete="email"
+              />
+            </div>
+          </form>
+          <div id="newsletterStatus" class="newsletterStatus" aria-live="polite"></div>
+          <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
+        </section>
+      </div>
+      <div class="modalFooter">
+        <button id="subscribeBtn" class="actionBtn">Abonnieren</button>
       </div>
     </div>
   </div>

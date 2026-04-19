@@ -27,6 +27,11 @@ const settingsBtn = doc?.getElementById("settingsBtn");
 const settingsModal = doc?.getElementById("settingsModal");
 const closeSettings = doc?.getElementById("closeSettings");
 const saveSettingsBtn = doc?.getElementById("saveSettings");
+
+const openNewsletterBtn = doc?.getElementById("openNewsletterBtn");
+const newsletterModal = doc?.getElementById("newsletterModal");
+const closeNewsletter = doc?.getElementById("closeNewsletter");
+const subscribeBtn = doc?.getElementById("subscribeBtn");
 const useCustomKey = doc?.getElementById("useCustomKey");
 const customKeyFields = doc?.getElementById("customKeyFields");
 const ollamaKeyInput = doc?.getElementById("ollamaKey");
@@ -758,7 +763,7 @@ async function subscribeNewsletter() {
     return;
   }
 
-  if (newsletterBtn) newsletterBtn.disabled = true;
+  if (subscribeBtn) subscribeBtn.disabled = true;
   setNewsletterStatus("Newsletter-Anmeldung wird gesendet…");
 
   try {
@@ -781,13 +786,20 @@ async function subscribeNewsletter() {
     );
     if (newsletterEmailInput) newsletterEmailInput.value = "";
     if (newsletterNameInput) newsletterNameInput.value = "";
+
+    // Close modal after successful subscription
+    if (newsletterModal) {
+      setTimeout(() => {
+        newsletterModal.hidden = true;
+      }, 1000);
+    }
   } catch (err) {
     setNewsletterStatus(
       `Newsletter-Anmeldung fehlgeschlagen: ${String(err?.message || err)}`,
       "error"
     );
   } finally {
-    if (newsletterBtn) newsletterBtn.disabled = false;
+    if (subscribeBtn) subscribeBtn.disabled = false;
   }
 }
 
@@ -883,6 +895,18 @@ if (doc) {
 
   useCustomKey?.addEventListener("change", () => {
     customKeyFields.hidden = !useCustomKey.checked;
+  });
+
+  openNewsletterBtn?.addEventListener("click", () => {
+    newsletterModal.hidden = false;
+  });
+
+  closeNewsletter?.addEventListener("click", () => {
+    newsletterModal.hidden = true;
+  });
+
+  subscribeBtn?.addEventListener("click", () => {
+    subscribeNewsletter();
   });
 
   newsletterForm?.addEventListener("submit", (e) => {
