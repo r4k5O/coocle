@@ -340,12 +340,18 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
 
         logger.info("SQLite is empty, attempting to restore pages from Astra...")
         restored = 0
+        seen_urls = set()
 
         cursor = astra_collection.find({}, projection={"url": 1, "title": 1, "content": 1, "fetched_at": 1, "status_code": 1, "content_type": 1, "language": 1})
         for doc in cursor:
             url = doc.get("url")
             if not url:
                 continue
+
+            # Skip duplicates from AstraDB
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
 
             title = doc.get("title", "")
             content = doc.get("content", "")
@@ -356,7 +362,7 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
 
             conn.execute(
                 """
-                INSERT OR REPLACE INTO pages
+                INSERT OR IGNORE INTO pages
                 (url, title, content, fetched_at, status_code, content_type, language)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
