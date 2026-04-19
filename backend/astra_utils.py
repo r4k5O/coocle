@@ -18,6 +18,8 @@ ASTRA_META_COLLECTION_NAME = "coocle_internal"
 ASTRA_RESET_MARKER_ID = "__coocle_reset_marker__"
 ASTRA_CRAWL_QUEUE_DOC_TYPE = "crawl_queue"
 ASTRA_CRAWL_QUEUE_DOC_PREFIX = "__coocle_crawl_queue__:"
+ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE = "newsletter_subscriber"
+ASTRA_NEWSLETTER_SUBSCRIBER_DOC_PREFIX = "__coocle_newsletter__:"
 
 
 def _chunked(items: list, chunk_size: int):
@@ -366,3 +368,79 @@ def load_crawl_queue_documents(meta_collection, *, page_size: int = ASTRA_WRITE_
 
     rows.sort(key=lambda row: (row[2], row[0]))
     return rows
+
+
+def _newsletter_subscriber_doc_id(email: str) -> str:
+    return f"{ASTRA_NEWSLETTER_SUBSCRIBER_DOC_PREFIX}{email}"
+
+
+def upsert_newsletter_subscriber_document(
+    meta_collection,
+    *,
+    email: str,
+    name: str | None,
+    source_ip: str | None,
+    subscribed_at: str,
+) -> None:
+    if meta_collection is None or not email:
+        return
+    meta_collection.find_one_and_replace(
+        filter={"_id": _newsletter_subscriber_doc_id(email)},
+        replacement={
+            "_id": _newsletter_subscriber_doc_id(email),
+            "doc_type": ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE,
+            "email": email,
+            "name": name,
+            "source_ip": source_ip,
+            "subscribed_at": subscribed_at,
+        },
+        upsert=True,
+    )
+
+
+def load_newsletter_subscriber_documents(meta_collection, *, page_size: int = ASTRA_WRITE_BATCH_SIZE) -> list[dict[str, object]]:
+    if meta_collection is None:
+        return []
+
+    documents: list[dict] = []
+    try:
+        next_page_state = None
+        while True:
+            find_kwargs: dict[str, object] = {"limit": max(1, int(page_size))}
+            if next_page_state:
+                find_kwargs["initial_page_state"] = next_page_state
+
+            cursor = meta_collection.find({"doc_type": ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE}, **find_kwargs)
+            page = cursor.fetch_next_page()
+            documents.extend(list(getattr(page, "results", []) or []))
+            next_page_state = getattr(page, "next_page_state", None)
+            if not next_page_state:
+                break
+    except Exception:
+        logger.debug("AstraDB newsletter subscriber page fetch failed", exc_info=True)
+        try:
+            cursor = meta_collection.find(
+                {"doc_type": ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE},
+                limit=max(1, int(page_size)),
+            )
+            documents.extend(list(cursor))
+        except Exception:
+            logger.debug("AstraDB newsletter subscriber load failed", exc_info=True)
+            return []
+
+    subscribers: list[dict[str, object]] = []
+    for document in documents:
+        email = str(document.get("email") or "").strip()
+        if not email:
+            continue
+        subscribers.append(
+            {
+                "email": email,
+                "name": document.get("name"),
+                "source_ip": document.get("source_ip"),
+                "subscribed_at": str(document.get("subscribed_at") or ""),
+            }
+        )
+
+    subscribers.sort(key=lambda item: (str(item.get("subscribed_at") or ""), str(item.get("email") or "")))
+    return subscribers

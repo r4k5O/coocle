@@ -278,6 +278,81 @@ class AstraResetTests(unittest.TestCase):
             ],
         )
 
+    def test_newsletter_subscriber_roundtrip_uses_meta_collection_documents(self) -> None:
+        class FakeCursor:
+            def __init__(self, documents) -> None:
+                self._documents = list(documents)
+
+            def fetch_next_page(self):
+                return SimpleNamespace(results=list(self._documents), next_page_state=None)
+
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.replacement = None
+                self.find_filter = None
+
+            def find_one_and_replace(self, *, filter, replacement, upsert):
+                self.filter = filter
+                self.replacement = replacement
+                self.upsert = upsert
+
+            def find(self, filter, **kwargs):
+                self.find_filter = filter
+                self.find_kwargs = kwargs
+                return FakeCursor(
+                    [
+                        {
+                            "_id": "__coocle_newsletter__:zeta@example.com",
+                            "doc_type": astra_utils.ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE,
+                            "email": "zeta@example.com",
+                            "name": "Zeta",
+                            "source_ip": "127.0.0.1",
+                            "subscribed_at": "2026-04-19T11:30:00",
+                        },
+                        {
+                            "_id": "__coocle_newsletter__:alpha@example.com",
+                            "doc_type": astra_utils.ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE,
+                            "email": "alpha@example.com",
+                            "name": "Alpha",
+                            "source_ip": "127.0.0.2",
+                            "subscribed_at": "2026-04-19T11:00:00",
+                        },
+                    ]
+                )
+
+        collection = FakeCollection()
+
+        astra_utils.upsert_newsletter_subscriber_document(
+            collection,
+            email="alpha@example.com",
+            name="Alpha",
+            source_ip="127.0.0.1",
+            subscribed_at="2026-04-19T11:00:00",
+        )
+        restored = astra_utils.load_newsletter_subscriber_documents(collection, page_size=10)
+
+        self.assertEqual(collection.filter, {"_id": "__coocle_newsletter__:alpha@example.com"})
+        self.assertEqual(collection.replacement["doc_type"], astra_utils.ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE)
+        self.assertTrue(collection.upsert)
+        self.assertEqual(collection.find_filter, {"doc_type": astra_utils.ASTRA_NEWSLETTER_SUBSCRIBER_DOC_TYPE})
+        self.assertEqual(
+            restored,
+            [
+                {
+                    "email": "alpha@example.com",
+                    "name": "Alpha",
+                    "source_ip": "127.0.0.2",
+                    "subscribed_at": "2026-04-19T11:00:00",
+                },
+                {
+                    "email": "zeta@example.com",
+                    "name": "Zeta",
+                    "source_ip": "127.0.0.1",
+                    "subscribed_at": "2026-04-19T11:30:00",
+                },
+            ],
+        )
+
 
 class StartupResetOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_reset_clears_sqlite_and_astra_when_credentials_exist(self) -> None:

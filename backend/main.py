@@ -9,7 +9,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db as dbmod
+from . import newsletter as newslettermod
 from . import astra_utils
 from .crawler import CrawlConfig, crawl_loop
 from .pages_service import build_pages_live_count_payload, build_pages_overview_payload, build_stats_payload
@@ -102,6 +103,24 @@ def _int_env(name: str, default: int) -> int:
     except ValueError:
         logger.warning("Invalid integer env %s=%r; using default %s", name, value, default)
         return default
+
+
+async def _read_json_object(request: Request) -> dict[str, Any]:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungueltiger JSON-Body.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON-Objekt erwartet.")
+    return payload
+
+
+def _require_newsletter_admin_token(provided_token: str | None) -> None:
+    expected_token = newslettermod.newsletter_admin_token()
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="Newsletter-Versand ist nicht konfiguriert.")
+    if str(provided_token or "").strip() != expected_token:
+        raise HTTPException(status_code=401, detail="Newsletter-Admin-Token fehlt oder ist ungueltig.")
 
 
 def _security_headers(response) -> None:
@@ -273,12 +292,43 @@ async def _reset_datastores_on_start(conn) -> None:
                 raise
 
 
+async def _restore_newsletter_subscribers_on_start(conn) -> None:
+    if dbmod.count_newsletter_subscribers(conn) > 0 or not astra_utils.has_astra_credentials():
+        return
+
+    try:
+        meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+        if meta_collection is None:
+            return
+
+        subscribers = await asyncio.to_thread(astra_utils.load_newsletter_subscriber_documents, meta_collection)
+        restored = 0
+        for subscriber in subscribers:
+            email = newslettermod.normalize_email(subscriber.get("email"))
+            if not email:
+                continue
+            dbmod.upsert_newsletter_subscriber(
+                conn,
+                email=email,
+                name=newslettermod.normalize_name(subscriber.get("name")),
+                source_ip=str(subscriber.get("source_ip") or "") or None,
+                subscribed_at=str(subscriber.get("subscribed_at") or "") or newslettermod.subscription_timestamp(),
+            )
+            restored += 1
+
+        if restored:
+            logger.info("Restored %d newsletter subscriber(s) from Astra metadata.", restored)
+    except Exception:
+        logger.exception("Newsletter subscriber restore from Astra failed; continuing")
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     astra_utils.reset_astra_cache()
     fastapi_app.state.conn = dbmod.connect(_db_path())
     dbmod.init_db(fastapi_app.state.conn)
     await _reset_datastores_on_start(fastapi_app.state.conn)
+    await _restore_newsletter_subscribers_on_start(fastapi_app.state.conn)
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
@@ -501,6 +551,90 @@ async def get_credits(request: Request):
     day = datetime.now().strftime("%Y-%m-%d")
     count = _usage_count(conn, ip, day)
     return {"used": count, "total": FREE_SUMMARY_LIMIT, "remaining": max(0, FREE_SUMMARY_LIMIT - count)}
+
+
+@app.post("/api/newsletter/subscribe")
+async def api_newsletter_subscribe(request: Request):
+    conn = _conn_from_request(request)
+    payload = await _read_json_object(request)
+    email = newslettermod.normalize_email(payload.get("email"))
+    if not email:
+        raise HTTPException(status_code=400, detail="Bitte eine gueltige E-Mail-Adresse angeben.")
+
+    name = newslettermod.normalize_name(payload.get("name"))
+    subscribed_at = newslettermod.subscription_timestamp()
+    created = dbmod.upsert_newsletter_subscriber(
+        conn,
+        email=email,
+        name=name,
+        source_ip=_request_ip(request),
+        subscribed_at=subscribed_at,
+    )
+    if astra_utils.has_astra_credentials():
+        try:
+            meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            if meta_collection is not None:
+                await asyncio.to_thread(
+                    astra_utils.upsert_newsletter_subscriber_document,
+                    meta_collection,
+                    email=email,
+                    name=name,
+                    source_ip=_request_ip(request),
+                    subscribed_at=subscribed_at,
+                )
+        except Exception:
+            logger.exception("Newsletter subscriber mirror to Astra failed; continuing")
+    return {
+        "ok": True,
+        "created": created,
+        "email": email,
+        "subscriber_count": dbmod.count_newsletter_subscribers(conn),
+        "message": (
+            "Danke. Du bist jetzt fuer den Coocle-Newsletter eingetragen."
+            if created
+            else "Diese E-Mail-Adresse ist bereits fuer den Coocle-Newsletter eingetragen."
+        ),
+    }
+
+
+@app.post("/api/newsletter/send")
+async def api_newsletter_send(
+    request: Request,
+    x_admin_token: Annotated[str | None, Header()] = None,
+):
+    _require_newsletter_admin_token(x_admin_token)
+
+    if not newslettermod.mailtrap_newsletter_configured():
+        raise HTTPException(status_code=503, detail="Mailtrap fuer Newsletter ist nicht konfiguriert.")
+
+    payload = await _read_json_object(request)
+    subject = str(payload.get("subject") or "").strip()
+    html = str(payload.get("html") or "").strip()
+    text = str(payload.get("text") or "").strip()
+    conn = _conn_from_request(request)
+    recipients = dbmod.list_newsletter_subscriber_emails(conn)
+    if not recipients:
+        raise HTTPException(status_code=400, detail="Es sind keine Newsletter-Abonnenten vorhanden.")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            send_result = await newslettermod.send_newsletter(
+                client,
+                recipients,
+                subject=subject,
+                html=html,
+                text=text,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        "subscriber_count": len(recipients),
+        **send_result,
+    }
 
 
 @app.get("/api/healthz")

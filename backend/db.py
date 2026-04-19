@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS summarization_usage (
   PRIMARY KEY (ip, day)
 );
 
+CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+  email TEXT PRIMARY KEY,
+  name TEXT,
+  source_ip TEXT,
+  subscribed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
   url,
   title,
@@ -215,3 +223,47 @@ def reset_runtime_data(conn: sqlite3.Connection) -> dict[str, int]:
     conn.execute("DELETE FROM summarization_usage")
     conn.commit()
     return counts
+
+
+def upsert_newsletter_subscriber(
+    conn: sqlite3.Connection,
+    *,
+    email: str,
+    name: str | None,
+    source_ip: str | None,
+    subscribed_at: str,
+) -> bool:
+    existing = conn.execute(
+        "SELECT email FROM newsletter_subscribers WHERE email = ? LIMIT 1",
+        (email,),
+    ).fetchone()
+    created = existing is None
+    conn.execute(
+        """
+        INSERT INTO newsletter_subscribers(email, name, source_ip, subscribed_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET
+          name = COALESCE(excluded.name, newsletter_subscribers.name),
+          source_ip = COALESCE(excluded.source_ip, newsletter_subscribers.source_ip),
+          updated_at = excluded.updated_at
+        """,
+        (email, name, source_ip, subscribed_at, subscribed_at),
+    )
+    conn.commit()
+    return created
+
+
+def list_newsletter_subscriber_emails(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT email
+        FROM newsletter_subscribers
+        ORDER BY subscribed_at, email
+        """
+    ).fetchall()
+    return [str(row["email"]) for row in rows if row["email"]]
+
+
+def count_newsletter_subscribers(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) AS count FROM newsletter_subscribers").fetchone()
+    return int(row["count"] if row else 0)

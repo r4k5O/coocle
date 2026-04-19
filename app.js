@@ -32,6 +32,11 @@ const customKeyFields = doc?.getElementById("customKeyFields");
 const ollamaKeyInput = doc?.getElementById("ollamaKey");
 const ollamaHostInput = doc?.getElementById("ollamaHost");
 const creditStatus = doc?.getElementById("creditStatus");
+const newsletterForm = doc?.getElementById("newsletterForm");
+const newsletterNameInput = doc?.getElementById("newsletterName");
+const newsletterEmailInput = doc?.getElementById("newsletterEmail");
+const newsletterBtn = doc?.getElementById("newsletterBtn");
+const newsletterStatus = doc?.getElementById("newsletterStatus");
 const DEFAULT_SEARCH_MODE = "hybrid";
 const prefersReducedMotion =
   typeof window !== "undefined" &&
@@ -150,6 +155,17 @@ function setStatus(text, kind = "info") {
   statusEl.textContent = text || "";
   statusEl.style.color =
     kind === "error" ? "var(--danger)" : kind === "ok" ? "var(--ok)" : "var(--muted)";
+}
+
+function setNewsletterStatus(text, kind = "info") {
+  if (!newsletterStatus) return;
+  newsletterStatus.textContent = text || "";
+  newsletterStatus.classList.remove("is-ok", "is-error");
+  if (kind === "ok") {
+    newsletterStatus.classList.add("is-ok");
+  } else if (kind === "error") {
+    newsletterStatus.classList.add("is-error");
+  }
 }
 
 function escapeHtml(s) {
@@ -734,6 +750,47 @@ async function updateCredits() {
   }
 }
 
+async function subscribeNewsletter() {
+  const email = String(newsletterEmailInput?.value || "").trim();
+  const name = String(newsletterNameInput?.value || "").trim();
+  if (!email) {
+    setNewsletterStatus("Bitte trage eine E-Mail-Adresse ein.", "error");
+    return;
+  }
+
+  if (newsletterBtn) newsletterBtn.disabled = true;
+  setNewsletterStatus("Newsletter-Anmeldung wird gesendet…");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/newsletter/subscribe`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, name }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload?.detail || `HTTP ${res.status}`);
+    }
+
+    setNewsletterStatus(
+      payload?.message || "Danke. Deine Adresse wurde fuer den Newsletter gespeichert.",
+      "ok"
+    );
+    if (newsletterEmailInput) newsletterEmailInput.value = "";
+    if (newsletterNameInput) newsletterNameInput.value = "";
+  } catch (err) {
+    setNewsletterStatus(
+      `Newsletter-Anmeldung fehlgeschlagen: ${String(err?.message || err)}`,
+      "error"
+    );
+  } finally {
+    if (newsletterBtn) newsletterBtn.disabled = false;
+  }
+}
+
 if (doc) {
   form?.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -826,6 +883,11 @@ if (doc) {
 
   useCustomKey?.addEventListener("change", () => {
     customKeyFields.hidden = !useCustomKey.checked;
+  });
+
+  newsletterForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    subscribeNewsletter();
   });
 
   loadSettings();

@@ -66,6 +66,38 @@
             </div>
           </div>
 
+          <section class="newsletterCard" aria-labelledby="newsletterTitle">
+            <div class="newsletterEyebrow">Mailtrap Newsletter</div>
+            <h2 id="newsletterTitle" class="newsletterTitle">Produkt-Updates direkt per Mail</h2>
+            <p class="newsletterIntro">
+              Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
+            </p>
+            <form id="newsletterForm" class="newsletterForm" autocomplete="on">
+              <label class="srOnly" for="newsletterName">Name</label>
+              <input
+                id="newsletterName"
+                class="newsletterInput"
+                name="name"
+                type="text"
+                placeholder="Name (optional)"
+                maxlength="120"
+              />
+              <label class="srOnly" for="newsletterEmail">E-Mail</label>
+              <input
+                id="newsletterEmail"
+                class="newsletterInput"
+                name="email"
+                type="email"
+                placeholder="dein.name@example.com"
+                required
+                autocomplete="email"
+              />
+              <button id="newsletterBtn" class="actionBtn" type="submit">Newsletter abonnieren</button>
+            </form>
+            <div id="newsletterStatus" class="newsletterStatus" aria-live="polite"></div>
+            <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
+          </section>
+
           <div class="metaRow">
             <div id="hint" class="hint">
               Tipp: <kbd>Enter</kbd> suchen, <kbd>Esc</kbd> abbrechen
