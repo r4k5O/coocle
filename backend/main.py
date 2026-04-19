@@ -440,6 +440,14 @@ async def lifespan(fastapi_app: FastAPI):
             except Exception:
                 logger.exception("Astra prewarm failed; continuing without prewarmed collection")
 
+        # Wait for restore task to complete before starting crawler
+        if fastapi_app.state.restore_task:
+            try:
+                await fastapi_app.state.restore_task
+                logger.info("AstraDB restore completed, starting crawler...")
+            except Exception:
+                logger.exception("AstraDB restore failed, starting crawler anyway...")
+
         if os.environ.get("COOCLE_START_CRAWLER", "").strip() in ("1", "true", "yes"):
             seeds = [s.strip() for s in os.environ.get("COOCLE_SEEDS", "").split(",") if s.strip()]
 
