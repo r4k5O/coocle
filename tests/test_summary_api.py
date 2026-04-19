@@ -281,6 +281,15 @@ class SummaryApiTests(unittest.TestCase):
         self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
+    def test_healthz_returns_lightweight_service_status(self) -> None:
+        response = self.client.get("/api/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["db_connected"])
+        self.assertFalse(payload["crawler_running"])
+
     def test_local_custom_ollama_host_is_allowed_for_local_client(self) -> None:
         with patch.object(
             self.main_module,

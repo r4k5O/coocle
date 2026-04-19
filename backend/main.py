@@ -502,6 +502,15 @@ async def get_credits(request: Request):
     return {"used": count, "total": FREE_SUMMARY_LIMIT, "remaining": max(0, FREE_SUMMARY_LIMIT - count)}
 
 
+@app.get("/api/healthz")
+def api_healthz(request: Request):
+    return {
+        "ok": True,
+        "db_connected": bool(getattr(request.app.state, "conn", None)),
+        "crawler_running": bool(getattr(request.app.state, "crawler_task", None)),
+    }
+
+
 @app.get("/api/stats")
 def api_stats(request: Request):
     conn = _conn_from_request(request)

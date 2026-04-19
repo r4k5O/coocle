@@ -6,14 +6,14 @@ services:
     autoDeployTrigger: checksPass
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/stats
+    healthCheckPath: /api/healthz
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: USE_ASTRA
         value: "true"
       - key: COOCLE_PREWARM_ASTRA
-        value: "1"
+        value: "0"
       - key: COOCLE_START_CRAWLER
         value: "1"
       - key: COOCLE_RESET_DATA_ON_START

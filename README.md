@@ -121,6 +121,8 @@ node --test tests/app.test.js
 
 `render.yaml` ist jetzt so konfiguriert, dass Render den Service erst deployed, wenn die GitHub-Checks auf `main` erfolgreich durchgelaufen sind.
 
+Fuer stabilere Starts auf Render nutzt der Healthcheck jetzt die leichte Route `/api/healthz` statt `/api/stats`, und `COOCLE_PREWARM_ASTRA` ist dort deaktiviert. Dadurch blockieren Astra-Warmup und Count-Abfragen den Deploy-Healthcheck nicht mehr.
+
 Zusätzlich setzt die Render-Konfiguration `COOCLE_RESET_DATA_ON_START=1`. Dadurch wird beim Start des neuen Service-Prozesses die SQLite-Datenbank geleert und, sobald Astra-Credentials vorhanden sind, auch die AstraDB-Collection komplett geleert.
 
 Wichtig:
