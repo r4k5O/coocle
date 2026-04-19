@@ -325,6 +325,67 @@ async def _restore_newsletter_subscribers_on_start(conn) -> None:
         logger.exception("Newsletter subscriber restore from Astra failed; continuing")
 
 
+async def _restore_pages_from_astra_on_start(conn) -> None:
+    sqlite_count = conn.execute("SELECT COUNT(*) AS c FROM pages").fetchone()
+    if sqlite_count and sqlite_count["c"] and sqlite_count["c"] > 0:
+        return
+
+    if not astra_utils.has_astra_credentials():
+        return
+
+    try:
+        astra_collection = await asyncio.to_thread(astra_utils.ensure_astra_collection)
+        if astra_collection is None:
+            return
+
+        logger.info("SQLite is empty, attempting to restore pages from Astra...")
+        restored = 0
+        page_size = 100
+        total_to_restore = 0
+
+        while True:
+            documents = await asyncio.to_thread(
+                astra_utils.load_documents,
+                astra_collection,
+                page_size=page_size,
+            )
+            if not documents:
+                break
+
+            for doc in documents:
+                url = doc.get("url")
+                if not url:
+                    continue
+
+                title = doc.get("title", "")
+                content = doc.get("content", "")
+                fetched_at = doc.get("fetched_at")
+                status_code = doc.get("status_code")
+                content_type = doc.get("content_type")
+                language = doc.get("language")
+
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO pages
+                    (url, title, content, fetched_at, status_code, content_type, language)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (url, title, content, fetched_at, status_code, content_type, language),
+                )
+                restored += 1
+
+            conn.commit()
+            total_to_restore += len(documents)
+            logger.info("Restored %d pages from Astra (batch of %d)", total_to_restore, len(documents))
+
+        if restored > 0:
+            logger.info("Successfully restored %d pages from Astra to SQLite.", restored)
+        else:
+            logger.info("No pages found in Astra to restore.")
+    except Exception:
+        logger.exception("Page restore from Astra failed; continuing")
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     astra_utils.reset_astra_cache()
@@ -332,6 +393,7 @@ async def lifespan(fastapi_app: FastAPI):
     dbmod.init_db(fastapi_app.state.conn)
     await _reset_datastores_on_start(fastapi_app.state.conn)
     await _restore_newsletter_subscribers_on_start(fastapi_app.state.conn)
+    await _restore_pages_from_astra_on_start(fastapi_app.state.conn)
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
