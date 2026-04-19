@@ -146,3 +146,117 @@ https://www.enn.com
 https://www.treehugger.com
 https://www.ecowatch.com
 https://www.nationalgeographic.de/natur
+
+# --- NEWS & POLITICS (ITALIAN) ---
+https://www.repubblica.it
+https://www.corriere.it
+https://www.ilsole24ore.com
+https://www.ansa.it
+https://www.ilpost.it
+
+# --- NEWS & POLITICS (PORTUGUESE) ---
+https://www.publico.pt
+https://www.folha.uol.com.br
+https://www.estadao.com.br
+https://www.globo.com
+https://www.dw.com/pt
+
+# --- NEWS & POLITICS (DUTCH) ---
+https://www.nrc.nl
+https://www.volkskrant.nl
+https://www.trouw.nl
+https://www.nos.nl
+https://www.ad.nl
+
+# --- NEWS & POLITICS (RUSSIAN) ---
+https://www.rbc.ru
+https://www.kommersant.ru
+https://www.gazeta.ru
+https://www.ria.ru
+
+# --- NEWS & POLITICS (JAPANESE) ---
+https://www.asahi.com
+https://www.nikkei.com
+https://www.yomiuri.co.jp
+https://mainichi.jp
+
+# --- NEWS & POLITICS (KOREAN) ---
+https://www.chosun.com
+https://www.joins.com
+https://www.donga.com
+https://www.hani.co.kr
+
+# --- NEWS & POLITICS (CHINESE) ---
+https://www.xinhuanet.com
+https://www.people.com.cn
+https://www.thepaper.cn
+https://www.guancha.cn
+
+# --- NEWS & POLITICS (ARABIC) ---
+https://www.aljazeera.net
+https://www.bbc.com/arabic
+https://www.skynewsarabia.com
+https://www.almasryalyoum.com
+
+# --- NEWS & POLITICS (HINDI) ---
+https://www.bbc.com/hindi
+https://www.ndtv.com
+https://www.hindustantimes.com
+https://www.indiatoday.in
+
+# --- SCIENCE & TECH (ITALIAN) ---
+https://www.ilfattoquotidiano.it/tag/scienza
+https://www.focus.it/scienza
+https://www.wired.it
+
+# --- SCIENCE & TECH (SPANISH) ---
+https://www.xataka.com
+https://www.abc.es/ciencia
+https://www.elmundo.es/ciencia-y-tecnologia
+
+# --- SCIENCE & TECH (PORTUGUESE) ---
+https://www.tecmundo.com.br
+https://www.uol.com.br/tecnologia
+https://www.g1.globo.com/tecnologia
+
+# --- RECIPES & COOKING (ITALIAN) ---
+https://www.giallozafferano.it
+https://www.cookaround.com
+https://www.misya.info
+
+# --- RECIPES & COOKING (PORTUGUESE) ---
+https://www.tudogostoso.com.br
+https://www.panelinha.com.br
+https://www.receitas.com
+
+# --- RECIPES & COOKING (SPANISH) ---
+https://www.recetasgratis.net
+https://www.directoalpaladar.com
+https://www.cocinadelirante.com
+
+# --- TRAVEL (ITALIAN) ---
+https://www.viaggiatore.net
+https://www.lonelyplanet.com/italia
+https://www.turismo.it
+
+# --- TRAVEL (SPANISH) ---
+https://www.viajes.com
+https://www.rutasescapadas.com
+https://www.lonelyplanet.com/espana
+
+# --- LIFESTYLE (SPANISH) ---
+https://www.vogue.es
+https://www.elconfidencial.com/estilo-de-vida
+https://www.hogarmania.com
+
+# --- LIFESTYLE (ITALIAN) ---
+https://www.vanityfair.it
+https://www.donnad.it
+https://www.elle.com/it
+
+# --- KNOWLEDGE (ADDITIONAL) ---
+https://pl.wikipedia.org/wiki/Wikipedia:Strona_g%C5%82%C3%B3wna
+https://ru.wikipedia.org/wiki/%D0%97%D0%B0%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%B0%D1%8F_%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0
+https://ja.wikipedia.org/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8
+https://ko.wikipedia.org/wiki/%EB%8C%80%EB%AC%B8
+https://zh.wikipedia.org/wiki/%E4%B8%BB%E9%A1%B5
