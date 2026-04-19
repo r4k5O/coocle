@@ -340,43 +340,35 @@ async def _restore_pages_from_astra_on_start(conn) -> None:
 
         logger.info("SQLite is empty, attempting to restore pages from Astra...")
         restored = 0
-        page_size = 100
-        total_to_restore = 0
 
-        while True:
-            documents = await asyncio.to_thread(
-                astra_utils.load_documents,
-                astra_collection,
-                page_size=page_size,
+        cursor = astra_collection.find({}, projection={"url": 1, "title": 1, "content": 1, "fetched_at": 1, "status_code": 1, "content_type": 1, "language": 1})
+        for doc in cursor:
+            url = doc.get("url")
+            if not url:
+                continue
+
+            title = doc.get("title", "")
+            content = doc.get("content", "")
+            fetched_at = doc.get("fetched_at")
+            status_code = doc.get("status_code")
+            content_type = doc.get("content_type")
+            language = doc.get("language")
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO pages
+                (url, title, content, fetched_at, status_code, content_type, language)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (url, title, content, fetched_at, status_code, content_type, language),
             )
-            if not documents:
-                break
+            restored += 1
 
-            for doc in documents:
-                url = doc.get("url")
-                if not url:
-                    continue
+            if restored % 100 == 0:
+                conn.commit()
+                logger.info("Restored %d pages from Astra...", restored)
 
-                title = doc.get("title", "")
-                content = doc.get("content", "")
-                fetched_at = doc.get("fetched_at")
-                status_code = doc.get("status_code")
-                content_type = doc.get("content_type")
-                language = doc.get("language")
-
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO pages
-                    (url, title, content, fetched_at, status_code, content_type, language)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (url, title, content, fetched_at, status_code, content_type, language),
-                )
-                restored += 1
-
-            conn.commit()
-            total_to_restore += len(documents)
-            logger.info("Restored %d pages from Astra (batch of %d)", total_to_restore, len(documents))
+        conn.commit()
 
         if restored > 0:
             logger.info("Successfully restored %d pages from Astra to SQLite.", restored)
