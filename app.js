@@ -28,10 +28,7 @@ const settingsModal = doc?.getElementById("settingsModal");
 const closeSettings = doc?.getElementById("closeSettings");
 const saveSettingsBtn = doc?.getElementById("saveSettings");
 
-const openNewsletterBtn = doc?.getElementById("openNewsletterBtn");
-const newsletterModal = doc?.getElementById("newsletterModal");
-const closeNewsletter = doc?.getElementById("closeNewsletter");
-const subscribeBtn = doc?.getElementById("subscribeBtn");
+const openSettingsForNewsletter = doc?.getElementById("openSettingsForNewsletter");
 const useCustomKey = doc?.getElementById("useCustomKey");
 const customKeyFields = doc?.getElementById("customKeyFields");
 const ollamaKeyInput = doc?.getElementById("ollamaKey");
@@ -763,7 +760,7 @@ async function subscribeNewsletter() {
     return;
   }
 
-  if (subscribeBtn) subscribeBtn.disabled = true;
+  if (newsletterBtn) newsletterBtn.disabled = true;
   setNewsletterStatus("Newsletter-Anmeldung wird gesendet…");
 
   try {
@@ -786,20 +783,13 @@ async function subscribeNewsletter() {
     );
     if (newsletterEmailInput) newsletterEmailInput.value = "";
     if (newsletterNameInput) newsletterNameInput.value = "";
-
-    // Close modal after successful subscription
-    if (newsletterModal) {
-      setTimeout(() => {
-        newsletterModal.hidden = true;
-      }, 1000);
-    }
   } catch (err) {
     setNewsletterStatus(
       `Newsletter-Anmeldung fehlgeschlagen: ${String(err?.message || err)}`,
       "error"
     );
   } finally {
-    if (subscribeBtn) subscribeBtn.disabled = false;
+    if (newsletterBtn) newsletterBtn.disabled = false;
   }
 }
 
@@ -897,16 +887,11 @@ if (doc) {
     customKeyFields.hidden = !useCustomKey.checked;
   });
 
-  openNewsletterBtn?.addEventListener("click", () => {
-    newsletterModal.hidden = false;
-  });
-
-  closeNewsletter?.addEventListener("click", () => {
-    newsletterModal.hidden = true;
-  });
-
-  subscribeBtn?.addEventListener("click", () => {
-    subscribeNewsletter();
+  openSettingsForNewsletter?.addEventListener("click", (e) => {
+    e.preventDefault();
+    loadSettings();
+    updateCredits();
+    settingsModal.hidden = false;
   });
 
   newsletterForm?.addEventListener("submit", (e) => {

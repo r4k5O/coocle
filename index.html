@@ -72,8 +72,8 @@
             <p class="newsletterIntro">
               Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
             </p>
-            <button id="openNewsletterBtn" class="actionBtn" type="button">Newsletter abonnieren</button>
-            <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
+            <button id="openSettingsForNewsletter" class="actionBtn" type="button">Einstellungen öffnen</button>
+            <p class="newsletterFineprint">Abonnieren und Abmelden in den Einstellungen. Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
           </section>
 
           <div class="metaRow">
@@ -145,25 +145,11 @@
             </div>
           </div>
         </section>
-      </div>
-      <div class="modalFooter">
-        <button id="saveSettings" class="actionBtn">Speichern</button>
-      </div>
-    </div>
-  </div>
 
-  <!-- Newsletter Modal -->
-  <div id="newsletterModal" class="modal" hidden>
-    <div class="modalContent">
-      <div class="modalHeader">
-        <h2>Newsletter abonnieren</h2>
-        <button id="closeNewsletter" class="closeBtn">&times;</button>
-      </div>
-      <div class="modalBody">
         <section class="settingsSection">
-          <h3>Produkt-Updates direkt per Mail</h3>
+          <h3>Newsletter</h3>
           <p class="newsletterIntro">
-            Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
+            Produkt-Updates direkt per Mail: Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
           </p>
           <form id="newsletterForm" class="newsletterForm" autocomplete="on">
             <div class="formGroup">
@@ -183,7 +169,6 @@
                 name="email"
                 type="email"
                 placeholder="dein.name@example.com"
-                required
                 autocomplete="email"
               />
             </div>
@@ -193,7 +178,7 @@
         </section>
       </div>
       <div class="modalFooter">
-        <button id="subscribeBtn" class="actionBtn">Abonnieren</button>
+        <button id="saveSettings" class="actionBtn">Speichern</button>
       </div>
     </div>
   </div>
