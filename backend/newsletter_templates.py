@@ -64,6 +64,7 @@ def _wrap_html(body: str, subtitle: str = "") -> str:
     <div class="footer">
       <p>Coocle &middot; Unabhaengiges Open-Source-Projekt</p>
       <p><a href="https://github.com/r4k5O/Coocle">Quellcode auf GitHub</a></p>
+      <p><a href="https://coocle-ctp8.onrender.com/unsubscribe.html">Newsletter abmelden</a></p>
     </div>
   </div>
 </body>

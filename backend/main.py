@@ -600,6 +600,47 @@ async def api_newsletter_subscribe(request: Request):
     }
 
 
+@app.post("/api/newsletter/unsubscribe")
+async def api_newsletter_unsubscribe(request: Request):
+    conn = _conn_from_request(request)
+    payload = await _read_json_object(request)
+    email = newslettermod.normalize_email(payload.get("email"))
+    if not email:
+        raise HTTPException(status_code=400, detail="Bitte eine gueltige E-Mail-Adresse angeben.")
+
+    if not dbmod.newsletter_subscriber_exists(conn, email):
+        return {
+            "ok": True,
+            "deleted": False,
+            "email": email,
+            "message": "Diese E-Mail-Adresse ist nicht fuer den Coocle-Newsletter eingetragen.",
+        }
+
+    deleted = dbmod.delete_newsletter_subscriber(conn, email)
+
+    if astra_utils.has_astra_credentials():
+        try:
+            meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            if meta_collection is not None:
+                await asyncio.to_thread(
+                    astra_utils.delete_newsletter_subscriber_document,
+                    meta_collection,
+                    email=email,
+                )
+        except Exception:
+            logger.exception("Newsletter subscriber delete from Astra failed; continuing")
+
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "email": email,
+        "subscriber_count": dbmod.count_newsletter_subscribers(conn),
+        "message": "Du hast dich erfolgreich vom Coocle-Newsletter abgemeldet."
+        if deleted
+        else "Abmeldung fehlgeschlagen.",
+    }
+
+
 @app.post("/api/newsletter/send")
 async def api_newsletter_send(
     request: Request,

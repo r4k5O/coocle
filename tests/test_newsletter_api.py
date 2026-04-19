@@ -418,3 +418,25 @@ class NewsletterApiTests(unittest.TestCase):
             self.assertTrue(response.json()["ok"])
             self.assertEqual(response.json()["stats"]["stars"], 42)
             self.assertEqual(response.json()["stats"]["forks"], 7)
+
+    def test_newsletter_unsubscribe_existing_subscriber(self) -> None:
+        self.client.post("/api/newsletter/subscribe", json={"email": "test@example.com"})
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "test@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertTrue(response.json()["deleted"])
+        self.assertEqual(response.json()["email"], "test@example.com")
+        self.assertEqual(response.json()["subscriber_count"], 0)
+
+    def test_newsletter_unsubscribe_nonexistent_subscriber(self) -> None:
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "nonexistent@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertFalse(response.json()["deleted"])
+        self.assertEqual(response.json()["email"], "nonexistent@example.com")
+        self.assertIn("nicht fuer den Coocle-Newsletter eingetragen", response.json()["message"])
+
+    def test_newsletter_unsubscribe_invalid_email(self) -> None:
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "invalid-email"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("gueltige", response.json()["detail"])

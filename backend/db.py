@@ -294,3 +294,20 @@ def record_milestone(conn: sqlite3.Connection, kind: str, value: int, reached_at
         (kind, value, reached_at),
     )
     conn.commit()
+
+
+def delete_newsletter_subscriber(conn: sqlite3.Connection, email: str) -> bool:
+    cursor = conn.execute(
+        "DELETE FROM newsletter_subscribers WHERE email = ?",
+        (email,),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def newsletter_subscriber_exists(conn: sqlite3.Connection, email: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM newsletter_subscribers WHERE email = ? LIMIT 1",
+        (email,),
+    ).fetchone()
+    return row is not None

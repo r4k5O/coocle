@@ -1,0 +1,68 @@
+name: Content Moderation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for inappropriate content
+        run: |
+          # Get the diff between base and head
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          
+          # Define blocked words (lowercase)
+          # This is a basic keyword filter - extend as needed
+          BLOCKED_WORDS=(
+            "fuck"
+            "shit"
+            "cunt"
+            "nigger"
+            "nigga"
+            "whore"
+            "slut"
+            "faggot"
+            "retard"
+            "bastard"
+            "asshole"
+          )
+          
+          # Check diff for blocked words
+          FOUND_WORDS=()
+          for word in "${BLOCKED_WORDS[@]}"; do
+            if grep -i "$word" pr_diff.txt > /dev/null 2>&1; then
+              FOUND_WORDS+=("$word")
+            fi
+          done
+          
+          # Report results
+          if [ ${#FOUND_WORDS[@]} -gt 0 ]; then
+            echo "::error::Inappropriate content found in PR: ${FOUND_WORDS[*]}"
+            echo "::error::Please remove inappropriate language before merging."
+            echo "Found words: ${FOUND_WORDS[*]}"
+            exit 1
+          else
+            echo "✅ No inappropriate content found in PR"
+          fi
+
+      - name: Check for suspicious patterns
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          
+          # Check for suspicious URL patterns
+          if grep -iE '(porn|xxx|adult|gambling|casino|betting)' pr_diff.txt > /dev/null 2>&1; then
+            echo "::warning::Potentially inappropriate URL patterns found in PR"
+          fi
+          
+          # Check for suspicious file additions
+          ADDED_FILES=$(git diff --name-only --diff-filter=A origin/${{ github.base_ref }}...HEAD)
+          if echo "$ADDED_FILES" | grep -iE '\.(exe|dll|bat|sh|ps1)$' > /dev/null 2>&1; then
+            echo "::warning::Executable files added to PR - please review carefully"
+          fi

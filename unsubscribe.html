@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="coocle_logo.png" />
+  <title>Newsletter abmelden - Coocle</title>
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .unsubscribeContainer {
+      max-width: 500px;
+      margin: 80px auto;
+      padding: 40px;
+      background: #ffffff;
+      border-radius: 12px;
+      border: 1px solid #e8ecf0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .unsubscribeHeader {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .unsubscribeHeader img {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+    }
+    .unsubscribeHeader h1 {
+      font-size: 24px;
+      margin: 0 0 8px;
+      color: #0d1b2a;
+    }
+    .unsubscribeHeader p {
+      color: #6b8299;
+      font-size: 14px;
+      margin: 0;
+    }
+    .formGroup {
+      margin-bottom: 20px;
+    }
+    .formGroup label {
+      display: block;
+      margin-bottom: 8px;
+      color: #3a4a5c;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .formGroup input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #d1d9e0;
+      border-radius: 8px;
+      font-size: 15px;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+    .formGroup input:focus {
+      outline: none;
+      border-color: #0fa2cb;
+    }
+    .statusMessage {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .statusMessage.is-ok {
+      background: #e6f7f0;
+      color: #0c7a3b;
+    }
+    .statusMessage.is-error {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .backLink {
+      display: block;
+      text-align: center;
+      margin-top: 24px;
+      color: #0fa2cb;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .backLink:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="unsubscribeContainer">
+      <div class="unsubscribeHeader">
+        <img src="coocle_logo.png" alt="Coocle Logo" />
+        <h1>Newsletter abmelden</h1>
+        <p>Gib deine E-Mail-Adresse ein, um dich vom Coocle-Newsletter abzumelden.</p>
+      </div>
+
+      <form id="unsubscribeForm" autocomplete="on">
+        <div class="formGroup">
+          <label for="email">E-Mail-Adresse</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="dein.name@example.com"
+            required
+            autocomplete="email"
+          />
+        </div>
+        <button type="submit" class="actionBtn" style="width: 100%;">Abmelden</button>
+      </form>
+
+      <div id="status" class="statusMessage" aria-live="polite" hidden></div>
+
+      <a href="./index.html" class="backLink">← Zurück zur Suche</a>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "";
+    const form = document.getElementById("unsubscribeForm");
+    const statusEl = document.getElementById("status");
+
+    function setStatus(text, kind) {
+      if (!statusEl) return;
+      statusEl.textContent = text || "";
+      statusEl.classList.remove("is-ok", "is-error");
+      statusEl.hidden = false;
+      if (kind === "ok") statusEl.classList.add("is-ok");
+      else if (kind === "error") statusEl.classList.add("is-error");
+    }
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = String(document.getElementById("email")?.value || "").trim();
+      if (!email) {
+        setStatus("Bitte trage eine E-Mail-Adresse ein.", "error");
+        return;
+      }
+
+      const submitBtn = form.querySelector("button");
+      if (submitBtn) submitBtn.disabled = true;
+      setStatus("Abmeldung wird verarbeitet...");
+
+      try {
+        const res = await fetch(`${API_BASE}/api/newsletter/unsubscribe`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.detail || `HTTP ${res.status}`);
+        }
+
+        setStatus(payload?.message || "Du hast dich erfolgreich abgemeldet.", "ok");
+        if (document.getElementById("email")) document.getElementById("email").value = "";
+      } catch (err) {
+        setStatus(`Abmeldung fehlgeschlagen: ${String(err?.message || err)}`, "error");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>
