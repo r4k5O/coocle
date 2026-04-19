@@ -795,11 +795,6 @@ def api_pages_live_count(request: Request):
         "astra": astra_status,
     }
 
-
-# Serve the existing static frontend from repo root.
-app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")
-
-
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse(str(ROOT / "coocle_logo.png"))
@@ -808,3 +803,7 @@ async def favicon():
 @app.get("/")
 def root_index():
     return FileResponse(str(ROOT / "index.html"))
+
+
+# Serve the existing static frontend from repo root.
+app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")

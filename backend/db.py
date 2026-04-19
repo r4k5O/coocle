@@ -105,13 +105,18 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    # Lightweight migration for existing DBs created before embedding columns existed.
+    # Lightweight migrations for existing DBs created before newer crawl metadata and
+    # embedding columns existed.
     for stmt in (
+        "ALTER TABLE pages ADD COLUMN fetched_at TEXT",
+        "ALTER TABLE pages ADD COLUMN status_code INTEGER",
+        "ALTER TABLE pages ADD COLUMN content_type TEXT",
         "ALTER TABLE pages ADD COLUMN embedding BLOB",
         "ALTER TABLE pages ADD COLUMN embedding_dim INTEGER",
         "ALTER TABLE pages ADD COLUMN embedding_norm REAL",
         "ALTER TABLE pages ADD COLUMN embedding_model TEXT",
         "ALTER TABLE pages ADD COLUMN language TEXT",
+        "ALTER TABLE crawl_queue ADD COLUMN last_error TEXT",
     ):
         try:
             conn.execute(stmt)

@@ -565,3 +565,9 @@ class SummaryApiTests(unittest.TestCase):
         self.assertIsNone(overview_payload["astra"]["document_count_estimate"])
         self.assertFalse(overview_payload["astra"]["count_is_estimate"])
         self.assertEqual(overview_payload["astra"]["count_source"], "unavailable")
+
+    def test_favicon_route_returns_logo_file(self) -> None:
+        response = self.client.get("/favicon.ico")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/png")

@@ -114,7 +114,7 @@ Wichtige Umgebungsvariablen:
 ```powershell
 .\.venv\Scripts\python -m unittest discover -s tests -p "test_*.py" -v
 node --check app.js
-node tests/app.test.js
+node --test tests/app.test.js
 ```
 
 ## Render Deploy

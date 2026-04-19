@@ -45,3 +45,51 @@ class DbSearchIndexTests(unittest.TestCase):
         self.assertEqual(fts_count, 1)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["url"], "https://example.com/python")
+
+    def test_init_db_upgrades_legacy_columns_needed_by_pages_overview(self) -> None:
+        conn = db.connect(f"file:legacy_overview_{id(self)}?mode=memory&cache=shared")
+        conn.row_factory = db.sqlite3.Row
+
+        conn.executescript(
+            """
+            CREATE TABLE pages (
+              id INTEGER PRIMARY KEY,
+              url TEXT NOT NULL UNIQUE,
+              title TEXT,
+              content TEXT
+            );
+            CREATE TABLE crawl_queue (
+              url TEXT PRIMARY KEY,
+              depth INTEGER NOT NULL,
+              discovered_at TEXT NOT NULL
+            );
+            INSERT INTO pages(url, title, content)
+            VALUES ('https://example.com/python', 'Python Docs', 'Legacy page row');
+            INSERT INTO crawl_queue(url, depth, discovered_at)
+            VALUES ('https://example.com/queued', 2, '2026-04-18T14:05:00');
+            """
+        )
+        conn.commit()
+
+        db.init_db(conn)
+
+        pages_row = conn.execute(
+            """
+            SELECT fetched_at, status_code, content_type, language
+            FROM pages
+            WHERE url = ?
+            """,
+            ("https://example.com/python",),
+        ).fetchone()
+        queue_row = conn.execute(
+            "SELECT last_error FROM crawl_queue WHERE url = ?",
+            ("https://example.com/queued",),
+        ).fetchone()
+
+        self.assertIsNotNone(pages_row)
+        self.assertIn("fetched_at", pages_row.keys())
+        self.assertIn("status_code", pages_row.keys())
+        self.assertIn("content_type", pages_row.keys())
+        self.assertIn("language", pages_row.keys())
+        self.assertIsNotNone(queue_row)
+        self.assertIn("last_error", queue_row.keys())
