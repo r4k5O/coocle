@@ -165,3 +165,67 @@ def detect_subscriber_milestone(current_count: int, last_milestone: int | None) 
             continue
         threshold = t
     return threshold if threshold > 0 else None
+
+
+def milestone_github_stars(star_count: int, forks: int, open_prs: int) -> MilestoneTemplate:
+    subject = f"Coocle hat {star_count:,} GitHub-Stars!"
+    html_body = f"""
+      <h2>Community auf GitHub waechst!</h2>
+      <p>Coocle hat jetzt <strong>{star_count:,} GitHub-Stars</strong>. Danke fuer deine Unterstuetzung!</p>
+      <div class="stat-row">
+        <div class="stat-cell">
+          <div class="stat-value">{star_count:,}</div>
+          <div class="stat-label">Stars</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-value">{forks:,}</div>
+          <div class="stat-label">Forks</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-value">{open_prs:,}</div>
+          <div class="stat-label">Open PRs</div>
+        </div>
+      </div>
+      <p>Stelle Coocle vor, indem du uns auf GitHub einen Stern gibst!</p>
+      <a href="https://github.com/r4k5O/coocle" class="cta">Coocle auf GitHub</a>
+    """
+    text = (
+        f"Coocle hat {star_count:,} GitHub-Stars!\n\n"
+        f"Stats: {forks:,} Forks, {open_prs:,} offene PRs\n\n"
+        f"Coocle auf GitHub: https://github.com/r4k5O/coocle\n"
+    )
+    return MilestoneTemplate(
+        subject=subject,
+        html=_wrap_html(html_body, subtitle="GitHub-Meilenstein"),
+        text=text,
+    )
+
+
+def milestone_github_forks(fork_count: int, stars: int) -> MilestoneTemplate:
+    subject = f"Coocle hat {fork_count:,} GitHub-Forks!"
+    html_body = f"""
+      <h2>Coocle wird geforkt!</h2>
+      <p>Coocle wurde <strong>{fork_count:,} Mal</strong> auf GitHub geforkt. Entwickler bauen darauf auf!</p>
+      <div class="stat-row">
+        <div class="stat-cell">
+          <div class="stat-value">{fork_count:,}</div>
+          <div class="stat-label">Forks</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-value">{stars:,}</div>
+          <div class="stat-label">Stars</div>
+        </div>
+      </div>
+      <p>Vielen Dank an alle Contributors!</p>
+      <a href="https://github.com/r4k5O/coocle" class="cta">Coocle auf GitHub</a>
+    """
+    text = (
+        f"Coocle hat {fork_count:,} GitHub-Forks!\n\n"
+        f"Vielen Dank an alle Contributors!\n\n"
+        f"Coocle auf GitHub: https://github.com/r4k5O/coocle\n"
+    )
+    return MilestoneTemplate(
+        subject=subject,
+        html=_wrap_html(html_body, subtitle="GitHub-Meilenstein"),
+        text=text,
+    )

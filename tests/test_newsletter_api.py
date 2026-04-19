@@ -382,3 +382,38 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(len(payload["sent_milestones"]), 0)
         self.assertIn("Keine neuen Meilensteine", payload["message"])
+
+    def test_github_stats_endpoint_requires_config(self) -> None:
+        response = self.client.get("/api/github/stats")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "GITHUB_REPO ist nicht konfiguriert.")
+
+    def test_github_stats_endpoint_fetches_stats(self) -> None:
+        fake_stats = {"stars": 42, "forks": 7, "open_issues": 3, "open_prs": 2, "watchers": 5, "subscribers": 5}
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPO": "test/repo"},
+            clear=False,
+        ), patch("backend.github_stats.httpx.AsyncClient") as mock_client:
+            class FakeResponse:
+                status_code = 200
+                def json(self):
+                    return {"stargazers_count": 42, "forks_count": 7, "subscribers_count": 5}
+                def raise_for_status(self):
+                    pass
+                headers = {"X-Total-Count": "5"}
+
+            class FakeClient:
+                async def __aenter__(self):
+                    return self
+                async def __aexit__(self, exc_type, exc, tb):
+                    pass
+                async def get(self, url, headers=None, timeout=None):
+                    return FakeResponse()
+
+            mock_client.return_value = FakeClient()
+            response = self.client.get("/api/github/stats")
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json()["ok"])
+            self.assertEqual(response.json()["stats"]["stars"], 42)
+            self.assertEqual(response.json()["stats"]["forks"], 7)

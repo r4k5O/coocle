@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db as dbmod
 from . import direct_email as directemailmod
+from . import github_stats as githubmod
 from . import newsletter as newslettermod
 from . import newsletter_templates as templatesmod
 from . import astra_utils
@@ -659,9 +660,23 @@ async def api_newsletter_check_milestones(
 
     last_page_milestone = dbmod.get_last_milestone(conn, "pages")
     last_subscriber_milestone = dbmod.get_last_milestone(conn, "subscribers")
+    last_stars_milestone = dbmod.get_last_milestone(conn, "github_stars")
+    last_forks_milestone = dbmod.get_last_milestone(conn, "github_forks")
 
     page_threshold = templatesmod.detect_page_milestone(page_count, last_page_milestone)
     subscriber_threshold = templatesmod.detect_subscriber_milestone(subscriber_count, last_subscriber_milestone)
+
+    github_stats = None
+    try:
+        github_stats = await githubmod.fetch_github_stats()
+    except Exception as exc:
+        logger.warning(f"GitHub stats fetch failed: {exc}")
+
+    star_threshold = None
+    fork_threshold = None
+    if github_stats:
+        star_threshold = githubmod.detect_github_milestone(github_stats, "stars", last_stars_milestone)
+        fork_threshold = githubmod.detect_github_milestone(github_stats, "forks", last_forks_milestone)
 
     sent_milestones = []
 
@@ -697,10 +712,43 @@ async def api_newsletter_check_milestones(
             logger.exception("Failed to send subscriber milestone newsletter")
             raise HTTPException(status_code=502, detail=f"Abonnenten-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
+    if star_threshold and github_stats:
+        template = templatesmod.milestone_github_stars(star_threshold, github_stats["forks"], github_stats["open_prs"])
+        try:
+            result = await asyncio.to_thread(
+                directemailmod.send_newsletter,
+                dbmod.list_newsletter_subscriber_emails(conn),
+                subject=template["subject"],
+                html=template["html"],
+                text=template["text"],
+            )
+            dbmod.record_milestone(conn, "github_stars", star_threshold, now_iso)
+            sent_milestones.append({"kind": "github_stars", "value": star_threshold, **result})
+        except Exception as exc:
+            logger.exception("Failed to send GitHub stars milestone newsletter")
+            raise HTTPException(status_code=502, detail=f"GitHub-Stars-Milestone-Versand fehlgeschlagen: {exc}") from exc
+
+    if fork_threshold and github_stats:
+        template = templatesmod.milestone_github_forks(fork_threshold, github_stats["stars"])
+        try:
+            result = await asyncio.to_thread(
+                directemailmod.send_newsletter,
+                dbmod.list_newsletter_subscriber_emails(conn),
+                subject=template["subject"],
+                html=template["html"],
+                text=template["text"],
+            )
+            dbmod.record_milestone(conn, "github_forks", fork_threshold, now_iso)
+            sent_milestones.append({"kind": "github_forks", "value": fork_threshold, **result})
+        except Exception as exc:
+            logger.exception("Failed to send GitHub forks milestone newsletter")
+            raise HTTPException(status_code=502, detail=f"GitHub-Forks-Milestone-Versand fehlgeschlagen: {exc}") from exc
+
     return {
         "ok": True,
         "page_count": page_count,
         "subscriber_count": subscriber_count,
+        "github_stats": github_stats,
         "sent_milestones": sent_milestones,
         "message": f"{len(sent_milestones)} Meilenstein-Newsletter(s) gesendet." if sent_milestones else "Keine neuen Meilensteine erreicht.",
     }
@@ -740,6 +788,18 @@ def api_pages_overview(
 def api_pages_live_count(request: Request):
     conn = _conn_from_request(request)
     return build_pages_live_count_payload(request, conn)
+
+
+@app.get("/api/github/stats")
+async def api_github_stats(request: Request):
+    try:
+        stats = await githubmod.fetch_github_stats()
+        return {"ok": True, "stats": stats}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("GitHub stats fetch failed")
+        raise HTTPException(status_code=502, detail=f"GitHub-API-Fehler: {exc}") from exc
 
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
 async def favicon():
