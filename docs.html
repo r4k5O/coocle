@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="coocle_logo.png" />
+  <title>Dokumentation - Coocle</title>
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .docsContainer {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    .docsHeader {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .docsHeader img {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+    .docsHeader h1 {
+      font-size: 32px;
+      margin: 0 0 8px;
+    }
+    .docsHeader p {
+      color: #6b8299;
+      font-size: 16px;
+      margin: 0;
+    }
+    .docsNav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+    .docsNav a {
+      padding: 8px 16px;
+      background: #f0f7fc;
+      color: #0fa2cb;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .docsNav a:hover {
+      background: #e0f0f8;
+    }
+    .docsSection {
+      margin-bottom: 40px;
+      padding: 24px;
+      background: #ffffff;
+      border-radius: 12px;
+      border: 1px solid #e8ecf0;
+    }
+    .docsSection h2 {
+      font-size: 22px;
+      margin: 0 0 16px;
+      color: #0d1b2a;
+      border-bottom: 2px solid #0fa2cb;
+      padding-bottom: 8px;
+    }
+    .docsSection h3 {
+      font-size: 18px;
+      margin: 24px 0 12px;
+      color: #1b2d45;
+    }
+    .docsSection p {
+      color: #3a4a5c;
+      line-height: 1.6;
+      margin: 0 0 12px;
+    }
+    .docsSection ul {
+      color: #3a4a5c;
+      line-height: 1.6;
+      margin: 0 0 16px 24px;
+    }
+    .docsSection li {
+      margin-bottom: 6px;
+    }
+    .docsSection code {
+      background: #f0f7fc;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #0fa2cb;
+    }
+    .docsSection pre {
+      background: #0d1b2a;
+      color: #8bb4d0;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 0 0 16px;
+    }
+    .docsSection pre code {
+      background: none;
+      padding: 0;
+      color: inherit;
+    }
+    .docsSection table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 16px;
+    }
+    .docsSection th,
+    .docsSection td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e8ecf0;
+    }
+    .docsSection th {
+      background: #f0f7fc;
+      font-weight: 600;
+      color: #0d1b2a;
+    }
+    .docsSection td {
+      color: #3a4a5c;
+    }
+    .endpointBlock {
+      background: #f0f7fc;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 0 0 16px;
+    }
+    .endpointMethod {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #0fa2cb;
+      color: #ffffff;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      margin-right: 8px;
+    }
+    .endpointPath {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      color: #0d1b2a;
+    }
+    .backLink {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #0fa2cb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .backLink:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="docsContainer">
+      <a href="./index.html" class="backLink">← Zurück zur Suche</a>
+
+      <header class="docsHeader">
+        <img src="coocle_logo.png" alt="Coocle Logo" />
+        <h1>Coocle Dokumentation</h1>
+        <p>Unabhängiges Open-Source-Projekt, nicht mit Google verbunden.</p>
+      </header>
+
+      <nav class="docsNav">
+        <a href="#api">API-Endpunkte</a>
+        <a href="#newsletter">Newsletter-System</a>
+        <a href="#github">GitHub-Integration</a>
+        <a href="#env">Umgebungsvariablen</a>
+      </nav>
+
+      <section id="api" class="docsSection">
+        <h2>API-Endpunkte</h2>
+        <p>Coocle bietet eine RESTful-API für Suche, Statistiken und Newsletter-Verwaltung.</p>
+
+        <h3>Suche</h3>
+        <div class="endpointBlock">
+          <span class="endpointMethod">GET</span>
+          <span class="endpointPath">/api/search</span>
+        </div>
+        <p><strong>Parameter:</strong></p>
+        <ul>
+          <li><code>q</code> (erforderlich) – Suchbegriff</li>
+          <li><code>limit</code> (optional) – Maximale Ergebnisse (Standard: 10)</li>
+          <li><code>summarize</code> (optional) – Zusammenfassung mit Ollama generieren (true/false)</li>
+        </ul>
+
+        <h3>Statistiken</h3>
+        <div class="endpointBlock">
+          <span class="endpointMethod">GET</span>
+          <span class="endpointPath">/api/stats</span>
+        </div>
+        <p>Gibt die Anzahl der indexierten Seiten zurück.</p>
+
+        <div class="endpointBlock">
+          <span class="endpointMethod">GET</span>
+          <span class="endpointPath">/api/pages/overview</span>
+        </div>
+        <p>Detaillierte Übersicht über indexierte und in der Warteschlange befindliche Seiten.</p>
+
+        <div class="endpointBlock">
+          <span class="endpointMethod">GET</span>
+          <span class="endpointPath">/api/github/stats</span>
+        </div>
+        <p>GitHub-Repository-Statistiken (Stars, Forks, PRs). Erfordert <code>GITHUB_REPO</code> Konfiguration.</p>
+
+        <h3>Newsletter</h3>
+        <div class="endpointBlock">
+          <span class="endpointMethod">POST</span>
+          <span class="endpointPath">/api/newsletter/subscribe</span>
+        </div>
+        <p><strong>Body:</strong></p>
+        <pre><code>{
+  "email": "deine@email.de",
+  "name": "Dein Name (optional)"
+}</code></pre>
+
+        <div class="endpointBlock">
+          <span class="endpointMethod">POST</span>
+          <span class="endpointPath">/api/newsletter/send</span>
+        </div>
+        <p>Sendet einen Newsletter an alle Abonnenten. Erfordert <code>X-Admin-Token</code> Header und SMTP-Konfiguration.</p>
+        <p><strong>Body:</strong></p>
+        <pre><code>{
+  "subject": "Newsletter-Betreff",
+  "html": "<h1>HTML-Inhalt</h1>",
+  "text": "Text-Inhalt"
+}</code></pre>
+
+        <div class="endpointBlock">
+          <span class="endpointMethod">POST</span>
+          <span class="endpointPath">/api/newsletter/check-milestones</span>
+        </div>
+        <p>Prüft auf Meilensteine (Seiten, Abonnenten, GitHub) und sendet automatisch Newsletter. Erfordert <code>X-Admin-Token</code> Header und SMTP-Konfiguration.</p>
+
+        <h3>System</h3>
+        <div class="endpointBlock">
+          <span class="endpointMethod">GET</span>
+          <span class="endpointPath">/api/healthz</span>
+        </div>
+        <p>Gesundheitscheck für Monitoring.</p>
+      </section>
+
+      <section id="newsletter" class="docsSection">
+        <h2>Newsletter-System</h2>
+        <p>Coocle verfügt über ein vollständiges Newsletter-System mit SMTP-Versand und Meilenstein-benachrichtigungen.</p>
+
+        <h3>Abonnenten verwalten</h3>
+        <p>Abonnenten können sich über das Webformular oder die API anmelden. Die Daten werden lokal in SQLite gespeichert.</p>
+
+        <h3>Newsletter senden</h3>
+        <p>Newsletter werden direkt über SMTP versendet – keine externen Dienste erforderlich. Unterstützt HTML und Text-Inhalte.</p>
+
+        <h3>Meilenstein-Newsletter</h3>
+        <p>Das System erkennt automatisch Meilensteine und versendet gestaltete Newsletter:</p>
+        <ul>
+          <li><strong>Seiten:</strong> 100, 500, 1K, 2.5K, 5K, 10K, 25K, 50K, 100K indexierte Seiten</li>
+          <li><strong>Abonnenten:</strong> 10, 25, 50, 100, 250, 500, 1K, 2.5K, 5K Abonnenten</li>
+          <li><strong>GitHub Stars:</strong> 10, 25, 50, 100, 250, 500, 1K Stars</li>
+          <li><strong>GitHub Forks:</strong> 5, 10, 25, 50, 100, 250, 500 Forks</li>
+        </ul>
+        <p>Bereits gesendete Meilensteine werden in der Datenbank gespeichert und nicht wiederholt.</p>
+
+        <h3>SMTP-Konfiguration</h3>
+        <p>Für den Newsletter-Versand müssen folgende Umgebungsvariablen konfiguriert werden:</p>
+        <pre><code>SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=deine@email.de
+SMTP_PASSWORD=dein-app-passwort
+SMTP_USE_TLS=true
+SMTP_SENDER_EMAIL=newsletter@example.com
+SMTP_SENDER_NAME=Coocle</code></pre>
+      </section>
+
+      <section id="github" class="docsSection">
+        <h2>GitHub-Integration</h2>
+        <p>Coocle kann GitHub-Repository-Statistiken abrufen und für Meilenstein-Newsletter verwenden.</p>
+
+        <h3>GitHub-Stats API</h3>
+        <p>Der Endpunkt <code>/api/github/stats</code> ruft folgende Daten ab:</p>
+        <ul>
+          <li>Stars (Stargazers)</li>
+          <li>Forks</li>
+          <li>Offene Issues</li>
+          <li>Offene Pull Requests</li>
+          <li>Watcher</li>
+        </ul>
+
+        <h3>Konfiguration</h3>
+        <pre><code>GITHUB_REPO=r4k5O/coocle
+GITHUB_API_TOKEN=ghp_xxxxxxxxxxxx (optional, für höhere Rate-Limits)</code></pre>
+
+        <h3>Meilenstein-Newsletter</h3>
+        <p>Wenn GitHub-Stats konfiguriert sind, prüft <code>/api/newsletter/check-milestones</code> automatisch auf GitHub-Meilensteine und versendet gestaltete Newsletter mit Statistik-Karten.</p>
+      </section>
+
+      <section id="env" class="docsSection">
+        <h2>Umgebungsvariablen</h2>
+        <p>Coocle wird über Umgebungsvariablen konfiguriert. Siehe <code>.env.example</code> für alle Optionen.</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Beschreibung</th>
+              <th>Standard</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>COOCLE_DB</code></td>
+              <td>Pfad zur SQLite-Datenbank</td>
+              <td>data/coocle.db</td>
+            </tr>
+            <tr>
+              <td><code>OLLAMA_HOST</code></td>
+              <td>Ollama-Host für Zusammenfassungen</td>
+              <td>http://localhost:11434</td>
+            </tr>
+            <tr>
+              <td><code>OLLAMA_CHAT_MODEL</code></td>
+              <td>Ollama-Modell für Zusammenfassungen</td>
+              <td>deepseek-r1:1.5b</td>
+            </tr>
+            <tr>
+              <td><code>SMTP_HOST</code></td>
+              <td>SMTP-Server für Newsletter</td>
+              <td>–</td>
+            </tr>
+            <tr>
+              <td><code>GITHUB_REPO</code></td>
+              <td>GitHub-Repository (owner/repo)</td>
+              <td>–</td>
+            </tr>
+            <tr>
+              <td><code>COOCLE_NEWSLETTER_ADMIN_TOKEN</code></td>
+              <td>Admin-Token für Newsletter-Versand</td>
+              <td>–</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Rate-Limiting</h3>
+        <pre><code>COOCLE_API_RATE_LIMIT=60
+COOCLE_API_RATE_WINDOW_S=60
+COOCLE_SUMMARY_RATE_LIMIT=6
+COOCLE_SUMMARY_RATE_WINDOW_S=60</code></pre>
+      </section>
+
+      <section class="docsSection">
+        <h2>Open Source</h2>
+        <p>Coocle ist ein Open-Source-Projekt. Der Quellcode ist auf GitHub verfügbar:</p>
+        <p><a href="https://github.com/r4k5O/coocle" style="color: #0fa2cb;">https://github.com/r4k5O/coocle</a></p>
+        <p>Beiträge sind willkommen! Fork das Repository und erstelle einen Pull Request.</p>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
