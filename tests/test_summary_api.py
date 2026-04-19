@@ -621,6 +621,9 @@ class SummaryApiTests(unittest.TestCase):
 
     def test_favicon_route_returns_logo_file(self) -> None:
         response = self.client.get("/favicon.ico")
+        head_response = self.client.head("/favicon.ico")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"], "image/png")
+        self.assertEqual(head_response.status_code, 200)
+        self.assertEqual(head_response.headers["content-type"], "image/png")

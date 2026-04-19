@@ -538,7 +538,7 @@ def api_pages_live_count(request: Request):
     conn = _conn_from_request(request)
     return build_pages_live_count_payload(request, conn)
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
 async def favicon():
     return FileResponse(str(ROOT / "coocle_logo.png"))
 
