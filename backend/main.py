@@ -385,7 +385,6 @@ async def lifespan(fastapi_app: FastAPI):
     dbmod.init_db(fastapi_app.state.conn)
     await _reset_datastores_on_start(fastapi_app.state.conn)
     await _restore_newsletter_subscribers_on_start(fastapi_app.state.conn)
-    await _restore_pages_from_astra_on_start(fastapi_app.state.conn)
     fastapi_app.state.rate_limiter = SlidingWindowRateLimiter()
     fastapi_app.state.summary_semaphore = asyncio.Semaphore(
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
