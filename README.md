@@ -138,6 +138,7 @@ Dieses Repo ist jetzt so vorbereitet, dass lokale Daten und Geheimnisse nicht ve
 - `.env` und lokale DBs sind per `.gitignore` ausgeschlossen
 - CI läuft über `.github/workflows/ci.yml`
 - `.env.example` enthält nur sichere Platzhalter
+- Der Workflow ist in getrennte Jobs für Workflow-Validierung, Config-/Deploy-Checks, Backend-Tests, Frontend-Checks und einen App-Smoke-Test aufgeteilt
 
 Vor einer Veröffentlichung solltest du trotzdem noch:
 

@@ -10,9 +10,46 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  workflow:
+    name: Workflow Validation
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Lint GitHub Actions workflow
+        uses: rhysd/actionlint@v1
+
+  config:
+    name: Config Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate Render config and health route wiring
+        run: |
+          test -f render.yaml
+          grep -F "healthCheckPath: /api/healthz" render.yaml
+          grep -F "autoDeployTrigger: checksPass" render.yaml
+          grep -F '@app.get("/api/healthz")' backend/main.py
+          grep -F 'def api_healthz' backend/main.py
+          grep -F 'app.mount("/", StaticFiles' backend/main.py
+          grep -F '<link rel="icon"' pages/index.html
+
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs:
+      - workflow
+      - config
 
     steps:
       - name: Checkout
@@ -22,11 +59,6 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
 
       - name: Install Python dependencies
         run: |
@@ -38,10 +70,88 @@ jobs:
           USE_ASTRA: "false"
           COOCLE_START_CRAWLER: "0"
           COOCLE_PREWARM_ASTRA: "0"
+          COOCLE_RESET_DATA_ON_START: "0"
         run: python -m unittest discover -s tests -p "test_*.py" -v
+
+  frontend:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    needs:
+      - workflow
+      - config
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
 
       - name: Check frontend syntax
         run: node --check app.js
 
       - name: Run frontend unit tests
         run: node --test tests/app.test.js
+
+  smoke:
+    name: App Smoke Test
+    runs-on: ubuntu-latest
+    needs:
+      - workflow
+      - config
+      - backend
+      - frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start app
+        env:
+          USE_ASTRA: "false"
+          COOCLE_START_CRAWLER: "0"
+          COOCLE_PREWARM_ASTRA: "0"
+          COOCLE_RESET_DATA_ON_START: "0"
+        run: |
+          python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/healthz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat uvicorn.log
+          exit 1
+
+      - name: Smoke check core routes
+        run: |
+          curl -fsS http://127.0.0.1:8000/api/healthz
+          curl -fsS http://127.0.0.1:8000/api/stats
+          curl -fsS http://127.0.0.1:8000/api/pages/overview
+          curl -fsS http://127.0.0.1:8000/api/pages/live-count
+          curl -fsSI http://127.0.0.1:8000/favicon.ico
+          curl -fsS http://127.0.0.1:8000/pages/ > /dev/null
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat uvicorn.log
+
+      - name: Stop app
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then
+            kill "$(cat uvicorn.pid)" || true
+          fi
