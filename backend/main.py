@@ -888,7 +888,7 @@ def api_stats(request: Request):
 def api_pages_overview(
     request: Request,
     indexed_limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    queue_limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    queue_limit: Annotated[int, Query(ge=1)] = 100,
 ):
     conn = _conn_from_request(request)
     return build_pages_overview_payload(
