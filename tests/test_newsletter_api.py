@@ -20,10 +20,13 @@ class NewsletterApiTests(unittest.TestCase):
         self.prev_api_rate_limit = os.environ.get("COOCLE_API_RATE_LIMIT")
         self.prev_api_rate_window = os.environ.get("COOCLE_API_RATE_WINDOW_S")
         self.prev_newsletter_admin_token = os.environ.get("COOCLE_NEWSLETTER_ADMIN_TOKEN")
-        self.prev_mailtrap_api_token = os.environ.get("MAILTRAP_API_TOKEN")
-        self.prev_mailtrap_sending_email = os.environ.get("MAILTRAP_SENDING_EMAIL")
-        self.prev_mailtrap_sending_name = os.environ.get("MAILTRAP_SENDING_NAME")
-        self.prev_mailtrap_batch_url = os.environ.get("MAILTRAP_NEWSLETTER_BATCH_URL")
+        self.prev_smtp_host = os.environ.get("SMTP_HOST")
+        self.prev_smtp_port = os.environ.get("SMTP_PORT")
+        self.prev_smtp_username = os.environ.get("SMTP_USERNAME")
+        self.prev_smtp_password = os.environ.get("SMTP_PASSWORD")
+        self.prev_smtp_use_tls = os.environ.get("SMTP_USE_TLS")
+        self.prev_smtp_sender_email = os.environ.get("SMTP_SENDER_EMAIL")
+        self.prev_smtp_sender_name = os.environ.get("SMTP_SENDER_NAME")
         self.prev_astra_token = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
         self.prev_astra_endpoint = os.environ.get("ASTRA_DB_API_ENDPOINT")
 
@@ -35,10 +38,13 @@ class NewsletterApiTests(unittest.TestCase):
         os.environ["COOCLE_API_RATE_LIMIT"] = "100"
         os.environ["COOCLE_API_RATE_WINDOW_S"] = "60"
         os.environ["COOCLE_NEWSLETTER_ADMIN_TOKEN"] = ""
-        os.environ["MAILTRAP_API_TOKEN"] = ""
-        os.environ["MAILTRAP_SENDING_EMAIL"] = ""
-        os.environ["MAILTRAP_SENDING_NAME"] = "Coocle"
-        os.environ["MAILTRAP_NEWSLETTER_BATCH_URL"] = ""
+        os.environ["SMTP_HOST"] = ""
+        os.environ["SMTP_PORT"] = "587"
+        os.environ["SMTP_USERNAME"] = ""
+        os.environ["SMTP_PASSWORD"] = ""
+        os.environ["SMTP_USE_TLS"] = "true"
+        os.environ["SMTP_SENDER_EMAIL"] = ""
+        os.environ["SMTP_SENDER_NAME"] = "Coocle"
         os.environ["ASTRA_DB_APPLICATION_TOKEN"] = ""
         os.environ["ASTRA_DB_API_ENDPOINT"] = ""
 
@@ -61,10 +67,13 @@ class NewsletterApiTests(unittest.TestCase):
             "COOCLE_API_RATE_LIMIT": self.prev_api_rate_limit,
             "COOCLE_API_RATE_WINDOW_S": self.prev_api_rate_window,
             "COOCLE_NEWSLETTER_ADMIN_TOKEN": self.prev_newsletter_admin_token,
-            "MAILTRAP_API_TOKEN": self.prev_mailtrap_api_token,
-            "MAILTRAP_SENDING_EMAIL": self.prev_mailtrap_sending_email,
-            "MAILTRAP_SENDING_NAME": self.prev_mailtrap_sending_name,
-            "MAILTRAP_NEWSLETTER_BATCH_URL": self.prev_mailtrap_batch_url,
+            "SMTP_HOST": self.prev_smtp_host,
+            "SMTP_PORT": self.prev_smtp_port,
+            "SMTP_USERNAME": self.prev_smtp_username,
+            "SMTP_PASSWORD": self.prev_smtp_password,
+            "SMTP_USE_TLS": self.prev_smtp_use_tls,
+            "SMTP_SENDER_EMAIL": self.prev_smtp_sender_email,
+            "SMTP_SENDER_NAME": self.prev_smtp_sender_name,
             "ASTRA_DB_APPLICATION_TOKEN": self.prev_astra_token,
             "ASTRA_DB_API_ENDPOINT": self.prev_astra_endpoint,
         }
@@ -162,7 +171,7 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
 
-    def test_newsletter_send_requires_mailtrap_configuration(self) -> None:
+    def test_newsletter_send_requires_smtp_configuration(self) -> None:
         self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
 
         with patch.dict(
@@ -177,7 +186,7 @@ class NewsletterApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()["detail"], "Mailtrap fuer Newsletter ist nicht konfiguriert.")
+        self.assertEqual(response.json()["detail"], "SMTP fuer Newsletter ist nicht konfiguriert.")
 
     def test_restore_newsletter_subscribers_from_astra_when_sqlite_is_empty(self) -> None:
         fake_meta_collection = object()
@@ -208,61 +217,55 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(row["name"], "Restore Me")
         self.assertEqual(row["source_ip"], "127.0.0.1")
 
-    def test_newsletter_send_uses_mailtrap_bulk_batch_api(self) -> None:
+    def test_newsletter_send_uses_smtp(self) -> None:
         self.client.post("/api/newsletter/subscribe", json={"email": "alpha@example.com"})
         self.client.post("/api/newsletter/subscribe", json={"email": "beta@example.com"})
-        captured_calls: list[dict] = []
+        sent_messages: list[dict] = []
 
-        class FakeResponse:
-            status_code = 200
-            text = ""
+        class FakeSMTP:
+            def __init__(self, host, port, timeout=30):
+                self.host = host
+                self.port = port
 
-            def raise_for_status(self) -> None:
-                return None
+            def ehlo(self):
+                pass
 
-            def json(self) -> dict:
-                return {
-                    "success": True,
-                    "responses": [
-                        {"success": True, "message_ids": ["msg-1"]},
-                        {"success": True, "message_ids": ["msg-2"]},
-                    ],
-                }
+            def starttls(self):
+                pass
 
-        class FakeAsyncClient:
-            async def __aenter__(self):
-                return self
+            def login(self, username, password):
+                pass
 
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
+            def sendmail(self, from_addr, to_addrs, msg_string):
+                sent_messages.append({
+                    "from": from_addr,
+                    "to": to_addrs,
+                    "msg": msg_string,
+                })
 
-            async def post(self, url, *, headers=None, json=None, timeout=None):
-                captured_calls.append(
-                    {
-                        "url": url,
-                        "headers": headers,
-                        "json": json,
-                        "timeout": timeout,
-                    }
-                )
-                return FakeResponse()
+            def quit(self):
+                pass
 
         with patch.dict(
             os.environ,
             {
                 "COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token",
-                "MAILTRAP_API_TOKEN": "mailtrap-token",
-                "MAILTRAP_SENDING_EMAIL": "newsletter@coocle.test",
-                "MAILTRAP_SENDING_NAME": "Coocle News",
+                "SMTP_HOST": "smtp.test.local",
+                "SMTP_PORT": "587",
+                "SMTP_USERNAME": "news@coocle.test",
+                "SMTP_PASSWORD": "smtp-pass",
+                "SMTP_USE_TLS": "true",
+                "SMTP_SENDER_EMAIL": "news@coocle.test",
+                "SMTP_SENDER_NAME": "Coocle News",
             },
             clear=False,
-        ), patch.object(self.main_module.httpx, "AsyncClient", return_value=FakeAsyncClient()):
+        ), patch("backend.direct_email.smtplib.SMTP", FakeSMTP):
             response = self.client.post(
                 "/api/newsletter/send",
                 headers={"X-Admin-Token": "secret-token"},
                 json={
                     "subject": "Coocle April Update",
-                    "html": "<h1>Neue Features</h1><p>Queue-Resume und Mailtrap sind live.</p>",
+                    "html": "<h1>Neue Features</h1><p>SMTP ist live.</p>",
                 },
             )
 
@@ -273,21 +276,11 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(payload["sent"], 2)
         self.assertEqual(payload["batches"], 1)
 
-        self.assertEqual(len(captured_calls), 1)
-        call = captured_calls[0]
-        self.assertEqual(call["url"], "https://bulk.api.mailtrap.io/api/batch")
-        self.assertEqual(call["headers"]["Authorization"], "Bearer mailtrap-token")
-        self.assertEqual(call["headers"]["Api-Token"], "mailtrap-token")
-        self.assertEqual(call["json"]["base"]["from"]["email"], "newsletter@coocle.test")
-        self.assertEqual(call["json"]["base"]["from"]["name"], "Coocle News")
-        self.assertEqual(call["json"]["base"]["subject"], "Coocle April Update")
-        self.assertEqual(call["json"]["base"]["category"], "newsletter")
-        self.assertIn("Neue Features", call["json"]["base"]["html"])
-        self.assertIn("Neue Features", call["json"]["base"]["text"])
-        self.assertEqual(
-            call["json"]["requests"],
-            [
-                {"to": [{"email": "alpha@example.com"}]},
-                {"to": [{"email": "beta@example.com"}]},
-            ],
-        )
+        self.assertEqual(len(sent_messages), 2)
+        recipients = [msg["to"][0] for msg in sent_messages]
+        self.assertIn("alpha@example.com", recipients)
+        self.assertIn("beta@example.com", recipients)
+        for msg in sent_messages:
+            self.assertEqual(msg["from"], "news@coocle.test")
+            self.assertIn("Coocle April Update", msg["msg"])
+            self.assertIn("text/html", msg["msg"])
