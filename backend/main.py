@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db as dbmod
 from . import direct_email as directemailmod
 from . import newsletter as newslettermod
+from . import newsletter_templates as templatesmod
 from . import astra_utils
 from .crawler import CrawlConfig, crawl_loop
 from .pages_service import build_pages_live_count_payload, build_pages_overview_payload, build_stats_payload
@@ -634,6 +635,74 @@ async def api_newsletter_send(
         "ok": True,
         "subscriber_count": len(recipients),
         **send_result,
+    }
+
+
+@app.post("/api/newsletter/check-milestones")
+async def api_newsletter_check_milestones(
+    request: Request,
+    x_admin_token: Annotated[str | None, Header()] = None,
+):
+    _require_newsletter_admin_token(x_admin_token)
+
+    if not directemailmod.smtp_configured():
+        raise HTTPException(status_code=503, detail="SMTP fuer Newsletter ist nicht konfiguriert.")
+
+    conn = _conn_from_request(request)
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    stats = build_stats_payload(request, conn, db_path=str(_db_path()))
+    page_count = int(stats.get("pages", 0))
+    subscriber_count = dbmod.count_newsletter_subscribers(conn)
+
+    last_page_milestone = dbmod.get_last_milestone(conn, "pages")
+    last_subscriber_milestone = dbmod.get_last_milestone(conn, "subscribers")
+
+    page_threshold = templatesmod.detect_page_milestone(page_count, last_page_milestone)
+    subscriber_threshold = templatesmod.detect_subscriber_milestone(subscriber_count, last_subscriber_milestone)
+
+    sent_milestones = []
+
+    if page_threshold:
+        template = templatesmod.milestone_pages(page_threshold)
+        try:
+            result = await asyncio.to_thread(
+                directemailmod.send_newsletter,
+                dbmod.list_newsletter_subscriber_emails(conn),
+                subject=template["subject"],
+                html=template["html"],
+                text=template["text"],
+            )
+            dbmod.record_milestone(conn, "pages", page_threshold, now_iso)
+            sent_milestones.append({"kind": "pages", "value": page_threshold, **result})
+        except Exception as exc:
+            logger.exception("Failed to send page milestone newsletter")
+            raise HTTPException(status_code=502, detail=f"Seiten-Milestone-Versand fehlgeschlagen: {exc}") from exc
+
+    if subscriber_threshold:
+        template = templatesmod.milestone_subscribers(subscriber_threshold)
+        try:
+            result = await asyncio.to_thread(
+                directemailmod.send_newsletter,
+                dbmod.list_newsletter_subscriber_emails(conn),
+                subject=template["subject"],
+                html=template["html"],
+                text=template["text"],
+            )
+            dbmod.record_milestone(conn, "subscribers", subscriber_threshold, now_iso)
+            sent_milestones.append({"kind": "subscribers", "value": subscriber_threshold, **result})
+        except Exception as exc:
+            logger.exception("Failed to send subscriber milestone newsletter")
+            raise HTTPException(status_code=502, detail=f"Abonnenten-Milestone-Versand fehlgeschlagen: {exc}") from exc
+
+    return {
+        "ok": True,
+        "page_count": page_count,
+        "subscriber_count": subscriber_count,
+        "sent_milestones": sent_milestones,
+        "message": f"{len(sent_milestones)} Meilenstein-Newsletter(s) gesendet." if sent_milestones else "Keine neuen Meilensteine erreicht.",
     }
 
 

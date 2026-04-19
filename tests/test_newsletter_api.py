@@ -284,3 +284,99 @@ class NewsletterApiTests(unittest.TestCase):
             self.assertEqual(msg["from"], "news@coocle.test")
             self.assertIn("Coocle April Update", msg["msg"])
             self.assertIn("text/html", msg["msg"])
+
+    def test_newsletter_check_milestones_requires_admin_token(self) -> None:
+        response = self.client.post("/api/newsletter/check-milestones")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
+
+    def test_newsletter_check_milestones_requires_smtp(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token"},
+            clear=False,
+        ):
+            response = self.client.post(
+                "/api/newsletter/check-milestones",
+                headers={"X-Admin-Token": "secret-token"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "SMTP fuer Newsletter ist nicht konfiguriert.")
+
+    def test_newsletter_check_milestones_sends_page_milestone(self) -> None:
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
+        sent_messages: list[dict] = []
+
+        class FakeSMTP:
+            def __init__(self, host, port, timeout=30):
+                pass
+            def ehlo(self):
+                pass
+            def starttls(self):
+                pass
+            def login(self, username, password):
+                pass
+            def sendmail(self, from_addr, to_addrs, msg_string):
+                sent_messages.append({"from": from_addr, "to": to_addrs, "msg": msg_string})
+            def quit(self):
+                pass
+
+        with patch.dict(
+            os.environ,
+            {
+                "COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token",
+                "SMTP_HOST": "smtp.test.local",
+                "SMTP_PORT": "587",
+                "SMTP_USERNAME": "news@coocle.test",
+                "SMTP_PASSWORD": "smtp-pass",
+                "SMTP_USE_TLS": "true",
+                "SMTP_SENDER_EMAIL": "news@coocle.test",
+                "SMTP_SENDER_NAME": "Coocle News",
+            },
+            clear=False,
+        ), patch("backend.direct_email.smtplib.SMTP", FakeSMTP), patch.object(
+            self.main_module.pages_service, "build_stats_payload", return_value={"pages": 100}
+        ):
+            response = self.client.post(
+                "/api/newsletter/check-milestones",
+                headers={"X-Admin-Token": "secret-token"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["page_count"], 100)
+        self.assertEqual(len(payload["sent_milestones"]), 1)
+        self.assertEqual(payload["sent_milestones"][0]["kind"], "pages")
+        self.assertEqual(payload["sent_milestones"][0]["value"], 100)
+        self.assertEqual(payload["sent_milestones"][0]["sent"], 1)
+
+    def test_newsletter_check_milestones_no_new_milestones(self) -> None:
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
+
+        with patch.dict(
+            os.environ,
+            {
+                "COOCLE_NEWSLETTER_ADMIN_TOKEN": "secret-token",
+                "SMTP_HOST": "smtp.test.local",
+                "SMTP_PORT": "587",
+                "SMTP_USERNAME": "news@coocle.test",
+                "SMTP_PASSWORD": "smtp-pass",
+                "SMTP_USE_TLS": "true",
+                "SMTP_SENDER_EMAIL": "news@coocle.test",
+                "SMTP_SENDER_NAME": "Coocle News",
+            },
+            clear=False,
+        ), patch.object(
+            self.main_module.pages_service, "build_stats_payload", return_value={"pages": 50}
+        ), patch("backend.direct_email.smtplib.SMTP"):
+            response = self.client.post(
+                "/api/newsletter/check-milestones",
+                headers={"X-Admin-Token": "secret-token"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["sent_milestones"]), 0)
+        self.assertIn("Keine neuen Meilensteine", payload["message"])

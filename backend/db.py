@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS newsletter_subscribers (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS newsletter_milestones (
+  kind TEXT NOT NULL,
+  value INTEGER NOT NULL,
+  reached_at TEXT NOT NULL,
+  PRIMARY KEY (kind, value)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
   url,
   title,
@@ -267,3 +274,23 @@ def list_newsletter_subscriber_emails(conn: sqlite3.Connection) -> list[str]:
 def count_newsletter_subscribers(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT COUNT(*) AS count FROM newsletter_subscribers").fetchone()
     return int(row["count"] if row else 0)
+
+
+def get_last_milestone(conn: sqlite3.Connection, kind: str) -> int | None:
+    row = conn.execute(
+        "SELECT MAX(value) AS v FROM newsletter_milestones WHERE kind = ?",
+        (kind,),
+    ).fetchone()
+    return int(row["v"]) if row and row["v"] is not None else None
+
+
+def record_milestone(conn: sqlite3.Connection, kind: str, value: int, reached_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO newsletter_milestones(kind, value, reached_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(kind, value) DO NOTHING
+        """,
+        (kind, value, reached_at),
+    )
+    conn.commit()
