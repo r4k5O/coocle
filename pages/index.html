@@ -454,7 +454,7 @@
 
       async function loadPageData() {
         await loadOverview();
-        await refreshLiveCount();
+        refreshLiveCount().catch(() => {});
       }
 
       renderLoadingState();

@@ -284,6 +284,7 @@ async def lifespan(fastapi_app: FastAPI):
         _int_env("COOCLE_SUMMARY_CONCURRENCY_LIMIT", 4)
     )
     fastapi_app.state.astra_count_cache = None
+    fastapi_app.state.astra_live_count_cache = None
     fastapi_app.state.crawl_status = {
         "state": "idle",
         "current_url": None,

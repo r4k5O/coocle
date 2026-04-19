@@ -529,7 +529,11 @@ class SummaryApiTests(unittest.TestCase):
             self.main_module.astra_utils,
             "get_astra_collection",
             return_value=fake_collection,
-        ), patch.object(self.main_module.astra_utils, "exact_document_count", return_value=None), patch.object(
+        ), patch.object(
+            self.main_module.astra_utils,
+            "exact_document_count",
+            side_effect=AssertionError("live-count should not do exact Astra counts"),
+        ), patch.object(
             self.main_module.astra_utils,
             "live_document_count",
             return_value=5471,
@@ -591,6 +595,29 @@ class SummaryApiTests(unittest.TestCase):
             overview_payload["astra"]["count_message"],
             "Astra ist verbunden, aber der Livezaehler liefert aktuell keinen Wert.",
         )
+
+    def test_pages_live_count_uses_cached_snapshot_for_repeated_requests(self) -> None:
+        fake_collection = type("FakeCollection", (), {"full_name": "testspace.coocle_pages"})()
+
+        with patch.object(self.main_module.astra_utils, "has_astra_credentials", return_value=True), patch.object(
+            self.main_module.astra_utils,
+            "get_astra_collection",
+            return_value=fake_collection,
+        ), patch.object(
+            self.main_module.astra_utils,
+            "exact_document_count",
+            side_effect=AssertionError("live-count should not do exact Astra counts"),
+        ), patch.object(
+            self.main_module.astra_utils,
+            "live_document_count",
+            return_value=5471,
+        ) as live_count_mock:
+            first = self.client.get("/api/pages/live-count")
+            second = self.client.get("/api/pages/live-count")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        live_count_mock.assert_called_once_with(fake_collection)
 
     def test_favicon_route_returns_logo_file(self) -> None:
         response = self.client.get("/favicon.ico")

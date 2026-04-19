@@ -7,6 +7,7 @@ from fastapi import Request
 from . import astra_utils
 
 ASTRA_COUNT_CACHE_TTL_S = 30.0
+ASTRA_LIVE_COUNT_CACHE_TTL_S = 60.0
 
 
 def _excerpt(text: str | None, limit: int = 220) -> str:
@@ -205,16 +206,16 @@ def astra_count_snapshot(
     live: bool = False,
     allow_estimate: bool = True,
 ) -> dict[str, object]:
-    if not live:
-        now = time.monotonic()
-        cached = getattr(request.app.state, "astra_count_cache", None)
-        if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
-            snapshot = cached.get("snapshot")
-            if isinstance(snapshot, dict):
-                return dict(snapshot)
+    now = time.monotonic()
+    cache_attr = "astra_live_count_cache" if live else "astra_count_cache"
+    cached = getattr(request.app.state, cache_attr, None)
+    if isinstance(cached, dict) and float(cached.get("expires_at", 0.0)) > now:
+        snapshot = cached.get("snapshot")
+        if isinstance(snapshot, dict):
+            return dict(snapshot)
 
     astra_collection = _astra_collection_for_runtime()
-    exact_count = astra_utils.exact_document_count(astra_collection)
+    exact_count = None if live else astra_utils.exact_document_count(astra_collection)
     live_count = None
     estimate_count = None
     effective_count = exact_count
@@ -257,11 +258,14 @@ def astra_count_snapshot(
         "count_is_live": bool(effective_count is not None and not count_is_estimate),
     }
 
-    if not live:
-        request.app.state.astra_count_cache = {
-            "expires_at": time.monotonic() + ASTRA_COUNT_CACHE_TTL_S,
+    setattr(
+        request.app.state,
+        cache_attr,
+        {
+            "expires_at": now + (ASTRA_LIVE_COUNT_CACHE_TTL_S if live else ASTRA_COUNT_CACHE_TTL_S),
             "snapshot": snapshot,
-        }
+        },
+    )
 
     return dict(snapshot)
 
