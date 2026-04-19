@@ -27,8 +27,6 @@ const settingsBtn = doc?.getElementById("settingsBtn");
 const settingsModal = doc?.getElementById("settingsModal");
 const closeSettings = doc?.getElementById("closeSettings");
 const saveSettingsBtn = doc?.getElementById("saveSettings");
-
-const openSettingsForNewsletter = doc?.getElementById("openSettingsForNewsletter");
 const useCustomKey = doc?.getElementById("useCustomKey");
 const customKeyFields = doc?.getElementById("customKeyFields");
 const ollamaKeyInput = doc?.getElementById("ollamaKey");
@@ -885,13 +883,6 @@ if (doc) {
 
   useCustomKey?.addEventListener("change", () => {
     customKeyFields.hidden = !useCustomKey.checked;
-  });
-
-  openSettingsForNewsletter?.addEventListener("click", (e) => {
-    e.preventDefault();
-    loadSettings();
-    updateCredits();
-    settingsModal.hidden = false;
   });
 
   newsletterForm?.addEventListener("submit", (e) => {

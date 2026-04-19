@@ -72,8 +72,30 @@
             <p class="newsletterIntro">
               Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
             </p>
-            <button id="openSettingsForNewsletter" class="actionBtn" type="button">Einstellungen öffnen</button>
-            <p class="newsletterFineprint">Abonnieren und Abmelden in den Einstellungen. Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
+            <form id="newsletterForm" class="newsletterForm" autocomplete="on">
+              <label class="srOnly" for="newsletterName">Name</label>
+              <input
+                id="newsletterName"
+                class="newsletterInput"
+                name="name"
+                type="text"
+                placeholder="Name (optional)"
+                maxlength="120"
+              />
+              <label class="srOnly" for="newsletterEmail">E-Mail</label>
+              <input
+                id="newsletterEmail"
+                class="newsletterInput"
+                name="email"
+                type="email"
+                placeholder="dein.name@example.com"
+                required
+                autocomplete="email"
+              />
+              <button id="newsletterBtn" class="actionBtn" type="submit">Newsletter abonnieren</button>
+            </form>
+            <div id="newsletterStatus" class="newsletterStatus" aria-live="polite"></div>
+            <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse. <a href="unsubscribe.html" style="color: inherit; text-decoration: underline;">Abmelden</a></p>
           </section>
 
           <div class="metaRow">
@@ -144,37 +166,6 @@
               <input type="text" id="ollamaHost" value="https://ollama.com/api" />
             </div>
           </div>
-        </section>
-
-        <section class="settingsSection">
-          <h3>Newsletter</h3>
-          <p class="newsletterIntro">
-            Produkt-Updates direkt per Mail: Neue Coocle-Features, Deploy-Updates und Such-Experimente ohne Social-Media-Umweg.
-          </p>
-          <form id="newsletterForm" class="newsletterForm" autocomplete="on">
-            <div class="formGroup">
-              <label for="newsletterName">Name (optional)</label>
-              <input
-                id="newsletterName"
-                name="name"
-                type="text"
-                placeholder="Dein Name"
-                maxlength="120"
-              />
-            </div>
-            <div class="formGroup">
-              <label for="newsletterEmail">E-Mail</label>
-              <input
-                id="newsletterEmail"
-                name="email"
-                type="email"
-                placeholder="dein.name@example.com"
-                autocomplete="email"
-              />
-            </div>
-          </form>
-          <div id="newsletterStatus" class="newsletterStatus" aria-live="polite"></div>
-          <p class="newsletterFineprint">Nur Updates zu Coocle. Keine Weitergabe der Adresse.</p>
         </section>
       </div>
       <div class="modalFooter">
