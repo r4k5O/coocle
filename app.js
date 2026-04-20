@@ -872,10 +872,7 @@ if (doc) {
   settingsBtn?.addEventListener("click", () => {
     loadSettings();
     updateCredits();
-    // Ensure modal content is ready before showing
-    requestAnimationFrame(() => {
-      settingsModal.hidden = false;
-    });
+    settingsModal.hidden = false;
   });
 
   closeSettings?.addEventListener("click", () => {
@@ -893,9 +890,16 @@ if (doc) {
     subscribeNewsletter();
   });
 
-  // Load settings immediately (script is deferred, so DOM is already parsed)
-  loadSettings();
-  updateCredits();
+  // Load settings when DOM is ready (not waiting for images)
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", () => {
+      loadSettings();
+      updateCredits();
+    });
+  } else {
+    loadSettings();
+    updateCredits();
+  }
   doc.querySelectorAll(".topicChip").forEach((chip) => {
     chip.addEventListener("click", () => {
       const q = chip.dataset.q;
