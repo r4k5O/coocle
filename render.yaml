@@ -44,3 +44,5 @@ services:
         sync: false
       - key: SMTP_SENDER_NAME
         value: Coocle
+      - key: COOCLE_NEWSLETTER_ADMIN_TOKEN
+        sync: false
