@@ -286,7 +286,7 @@ class NewsletterApiTests(unittest.TestCase):
             self.assertIn("text/html", msg["msg"])
 
     def test_newsletter_check_milestones_requires_smtp(self) -> None:
-        response = self.client.post("/api/newsletter/check-milestones")
+        response = self.client.post("/api/newsletter/check-milestones", headers={"X-Admin-Token": "test-admin-token"})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "Newsletter-Versand ist nicht konfiguriert.")
 
