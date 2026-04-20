@@ -700,8 +700,8 @@ async def api_newsletter_subscribe(request: Request):
         try:
             welcome_template = templatesmod.welcome_email(name=name)
             await asyncio.to_thread(
-                directemailmod.send_single_email,
-                recipient=email,
+                directemailmod.send_newsletter,
+                recipients=[email],
                 subject=welcome_template["subject"],
                 html=welcome_template["html"],
                 text=welcome_template["text"],
