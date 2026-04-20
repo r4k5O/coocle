@@ -47,4 +47,4 @@ services:
       - key: COOCLE_NEWSLETTER_ADMIN_TOKEN
         sync: false
       - key: COOCLE_SEND_WELCOME_EMAIL
-        value: "0"
+        value: "1"
