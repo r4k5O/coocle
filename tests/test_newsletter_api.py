@@ -86,7 +86,6 @@ class NewsletterApiTests(unittest.TestCase):
     def test_subscribe_creates_newsletter_subscriber(self) -> None:
         response = self.client.post(
             "/api/newsletter/subscribe",
-            headers={"X-Admin-Token": "test-admin-token"},
             json={"email": " Reader@example.com ", "name": "  Ada Lovelace  "},
         )
 
@@ -118,7 +117,6 @@ class NewsletterApiTests(unittest.TestCase):
         ) as mirror_subscriber:
             response = self.client.post(
                 "/api/newsletter/subscribe",
-                headers={"X-Admin-Token": "test-admin-token"},
                 json={"email": "mirror@example.com", "name": "Mirror"},
             )
 
@@ -132,11 +130,10 @@ class NewsletterApiTests(unittest.TestCase):
         )
 
     def test_subscribe_is_idempotent_for_duplicate_email(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "reader@example.com", "name": "Ada"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com", "name": "Ada"})
 
         response = self.client.post(
             "/api/newsletter/subscribe",
-            headers={"X-Admin-Token": "test-admin-token"},
             json={"email": "READER@example.com", "name": "Ada Updated"},
         )
 
@@ -153,13 +150,13 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(row["name"], "Ada Updated")
 
     def test_subscribe_rejects_invalid_email(self) -> None:
-        response = self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "not-an-email"})
+        response = self.client.post("/api/newsletter/subscribe", json={"email": "not-an-email"})
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Bitte eine gueltige E-Mail-Adresse angeben.")
 
     def test_newsletter_send_requires_admin_token(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "reader@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
 
         with patch.dict(
             os.environ,
@@ -175,7 +172,7 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
 
     def test_newsletter_send_requires_smtp_configuration(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "reader@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
 
         with patch.dict(
             os.environ,
@@ -221,8 +218,8 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(row["source_ip"], "127.0.0.1")
 
     def test_newsletter_send_uses_smtp(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "alpha@example.com"})
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "beta@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "alpha@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "beta@example.com"})
         sent_messages: list[dict] = []
 
         class FakeSMTP:
@@ -309,7 +306,7 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Newsletter-Admin-Token fehlt oder ist ungueltig.")
 
     def test_newsletter_check_milestones_sends_page_milestone(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "reader@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
         sent_messages: list[dict] = []
 
         class FakeSMTP:
@@ -357,7 +354,7 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(payload["sent_milestones"][0]["sent"], 1)
 
     def test_newsletter_check_milestones_no_new_milestones(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "reader@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "reader@example.com"})
 
         with patch.dict(
             os.environ,
@@ -423,8 +420,8 @@ class NewsletterApiTests(unittest.TestCase):
             self.assertEqual(response.json()["stats"]["forks"], 7)
 
     def test_newsletter_unsubscribe_existing_subscriber(self) -> None:
-        self.client.post("/api/newsletter/subscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "test@example.com"})
-        response = self.client.post("/api/newsletter/unsubscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "test@example.com"})
+        self.client.post("/api/newsletter/subscribe", json={"email": "test@example.com"})
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "test@example.com"})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["ok"])
         self.assertTrue(response.json()["deleted"])
@@ -432,7 +429,7 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertEqual(response.json()["subscriber_count"], 0)
 
     def test_newsletter_unsubscribe_nonexistent_subscriber(self) -> None:
-        response = self.client.post("/api/newsletter/unsubscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "nonexistent@example.com"})
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "nonexistent@example.com"})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["ok"])
         self.assertFalse(response.json()["deleted"])
@@ -440,6 +437,6 @@ class NewsletterApiTests(unittest.TestCase):
         self.assertIn("nicht fuer den Coocle-Newsletter eingetragen", response.json()["message"])
 
     def test_newsletter_unsubscribe_invalid_email(self) -> None:
-        response = self.client.post("/api/newsletter/unsubscribe", headers={"X-Admin-Token": "test-admin-token"}, json={"email": "invalid-email"})
+        response = self.client.post("/api/newsletter/unsubscribe", json={"email": "invalid-email"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("gueltige", response.json()["detail"])

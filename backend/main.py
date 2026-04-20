@@ -664,12 +664,7 @@ async def get_credits(request: Request):
 
 
 @app.post("/api/newsletter/subscribe")
-async def api_newsletter_subscribe(
-    request: Request,
-    x_admin_token: Annotated[str | None, Header()] = None,
-):
-    _require_newsletter_admin_token(x_admin_token)
-
+async def api_newsletter_subscribe(request: Request):
     conn = _conn_from_request(request)
     payload = await _read_json_object(request)
     email = newslettermod.normalize_email(payload.get("email"))
@@ -713,12 +708,7 @@ async def api_newsletter_subscribe(
 
 
 @app.post("/api/newsletter/unsubscribe")
-async def api_newsletter_unsubscribe(
-    request: Request,
-    x_admin_token: Annotated[str | None, Header()] = None,
-):
-    _require_newsletter_admin_token(x_admin_token)
-
+async def api_newsletter_unsubscribe(request: Request):
     conn = _conn_from_request(request)
     payload = await _read_json_object(request)
     email = newslettermod.normalize_email(payload.get("email"))
