@@ -696,6 +696,7 @@ async def api_newsletter_subscribe(request: Request):
             logger.exception("Newsletter subscriber mirror to Astra failed; continuing")
     
     # Send welcome email if configured and this is a new subscription
+    welcome_email_sent = False
     if created and _truthy_env("COOCLE_SEND_WELCOME_EMAIL", default=False):
         try:
             welcome_template = templatesmod.welcome_email(name=name)
@@ -706,6 +707,7 @@ async def api_newsletter_subscribe(request: Request):
                 html=welcome_template["html"],
                 text=welcome_template["text"],
             )
+            welcome_email_sent = True
             logger.info("Welcome email sent to %s", email)
         except Exception:
             logger.exception("Welcome email failed for %s; continuing", email)
@@ -715,6 +717,7 @@ async def api_newsletter_subscribe(request: Request):
         "created": created,
         "email": email,
         "subscriber_count": dbmod.count_newsletter_subscribers(conn),
+        "welcome_email_sent": welcome_email_sent,
         "message": (
             "Danke. Du bist jetzt fuer den Coocle-Newsletter eingetragen."
             if created

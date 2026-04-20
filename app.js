@@ -771,16 +771,21 @@ async function subscribeNewsletter() {
       body: JSON.stringify({ email, name }),
     });
     const payload = await res.json().catch(() => ({}));
+    
+    if (res.ok && payload.ok) {
+      let message = payload.message || "Erfolgreich angemeldet.";
+      if (payload.welcome_email_sent) {
+        message += " Willkommen-E-Mail wurde gesendet.";
+      }
+      setNewsletterStatus(message, "success");
+      if (newsletterEmailInput) newsletterEmailInput.value = "";
+      if (newsletterNameInput) newsletterNameInput.value = "";
+    } else {
+      setNewsletterStatus(payload.detail || "Newsletter-Anmeldung fehlgeschlagen.", "error");
+    }
     if (!res.ok) {
       throw new Error(payload?.detail || `HTTP ${res.status}`);
     }
-
-    setNewsletterStatus(
-      payload?.message || "Danke. Deine Adresse wurde fuer den Newsletter gespeichert.",
-      "ok"
-    );
-    if (newsletterEmailInput) newsletterEmailInput.value = "";
-    if (newsletterNameInput) newsletterNameInput.value = "";
   } catch (err) {
     setNewsletterStatus(
       `Newsletter-Anmeldung fehlgeschlagen: ${String(err?.message || err)}`,
