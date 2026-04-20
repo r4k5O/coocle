@@ -398,6 +398,12 @@ def upsert_newsletter_subscriber_document(
     )
 
 
+def delete_newsletter_subscriber_document(meta_collection, *, email: str) -> None:
+    if meta_collection is None or not email:
+        return
+    meta_collection.delete_one(filter={"_id": _newsletter_subscriber_doc_id(email)})
+
+
 def load_newsletter_subscriber_documents(meta_collection, *, page_size: int = ASTRA_WRITE_BATCH_SIZE) -> list[dict[str, object]]:
     if meta_collection is None:
         return []
