@@ -296,8 +296,33 @@ async def _reset_datastores_on_start(conn) -> None:
 
 
 async def _restore_newsletter_subscribers_on_start(conn) -> None:
-    # Disabled - newsletter data is now private (SQLite only, no AstraDB sync)
-    pass
+    if dbmod.count_newsletter_subscribers(conn) > 0 or not astra_utils.has_astra_credentials():
+        return
+
+    try:
+        meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+        if meta_collection is None:
+            return
+
+        subscribers = await asyncio.to_thread(astra_utils.load_newsletter_subscriber_documents, meta_collection)
+        restored = 0
+        for subscriber in subscribers:
+            email = newslettermod.normalize_email(subscriber.get("email"))
+            if not email:
+                continue
+            dbmod.upsert_newsletter_subscriber(
+                conn,
+                email=email,
+                name=newslettermod.normalize_name(subscriber.get("name")),
+                source_ip=str(subscriber.get("source_ip") or "") or None,
+                subscribed_at=str(subscriber.get("subscribed_at") or "") or newslettermod.subscription_timestamp(),
+            )
+            restored += 1
+
+        if restored:
+            logger.info("Restored %d newsletter subscriber(s) from Astra metadata.", restored)
+    except Exception:
+        logger.exception("Newsletter subscriber restore from Astra failed; continuing")
 
 
 async def _restore_pages_from_astra_on_start(conn) -> None:
@@ -639,7 +664,12 @@ async def get_credits(request: Request):
 
 
 @app.post("/api/newsletter/subscribe")
-async def api_newsletter_subscribe(request: Request):
+async def api_newsletter_subscribe(
+    request: Request,
+    x_admin_token: Annotated[str | None, Header()] = None,
+):
+    _require_newsletter_admin_token(x_admin_token)
+
     conn = _conn_from_request(request)
     payload = await _read_json_object(request)
     email = newslettermod.normalize_email(payload.get("email"))
@@ -655,7 +685,20 @@ async def api_newsletter_subscribe(request: Request):
         source_ip=_request_ip(request),
         subscribed_at=subscribed_at,
     )
-    # Disabled AstraDB sync to keep newsletter data private (SQLite only)
+    if astra_utils.has_astra_credentials():
+        try:
+            meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            if meta_collection is not None:
+                await asyncio.to_thread(
+                    astra_utils.upsert_newsletter_subscriber_document,
+                    meta_collection,
+                    email=email,
+                    name=name,
+                    source_ip=_request_ip(request),
+                    subscribed_at=subscribed_at,
+                )
+        except Exception:
+            logger.exception("Newsletter subscriber mirror to Astra failed; continuing")
     return {
         "ok": True,
         "created": created,
@@ -670,7 +713,12 @@ async def api_newsletter_subscribe(request: Request):
 
 
 @app.post("/api/newsletter/unsubscribe")
-async def api_newsletter_unsubscribe(request: Request):
+async def api_newsletter_unsubscribe(
+    request: Request,
+    x_admin_token: Annotated[str | None, Header()] = None,
+):
+    _require_newsletter_admin_token(x_admin_token)
+
     conn = _conn_from_request(request)
     payload = await _read_json_object(request)
     email = newslettermod.normalize_email(payload.get("email"))
@@ -686,7 +734,18 @@ async def api_newsletter_unsubscribe(request: Request):
         }
 
     deleted = dbmod.delete_newsletter_subscriber(conn, email)
-    # Disabled AstraDB sync to keep newsletter data private (SQLite only)
+
+    if astra_utils.has_astra_credentials():
+        try:
+            meta_collection = await asyncio.to_thread(astra_utils.get_astra_meta_collection)
+            if meta_collection is not None:
+                await asyncio.to_thread(
+                    astra_utils.delete_newsletter_subscriber_document,
+                    meta_collection,
+                    email=email,
+                )
+        except Exception:
+            logger.exception("Newsletter subscriber delete from Astra failed; continuing")
 
     return {
         "ok": True,
