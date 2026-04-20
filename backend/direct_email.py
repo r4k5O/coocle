@@ -168,3 +168,64 @@ def send_newsletter(
         raise RuntimeError(f"Newsletter-Versand fehlgeschlagen: {'; '.join(errors[:3])}")
 
     return {"sent": sent, "batches": 1, "errors": errors}
+
+
+def send_single_email(
+    recipient: str,
+    *,
+    subject: str,
+    html: str | None = None,
+    text: str | None = None,
+) -> dict[str, object]:
+    """Send an email to a single recipient."""
+    if not smtp_configured():
+        raise RuntimeError("SMTP ist nicht konfiguriert.")
+
+    cleaned = normalize_email(recipient)
+    if not cleaned:
+        raise ValueError("Ungueltige E-Mail-Adresse.")
+
+    cleaned_subject = str(subject or "").strip()
+    if not cleaned_subject:
+        raise ValueError("Die E-Mail braucht einen Betreff.")
+
+    html_body = str(html or "").strip()
+    text_body = str(text or "").strip()
+    if not html_body and not text_body:
+        raise ValueError("Die E-Mail braucht HTML- oder Text-Inhalt.")
+
+    sender = smtp_sender_email()
+    from_name = os.environ.get("SMTP_SENDER_NAME", "Coocle").strip() or "Coocle"
+    port = smtp_port()
+    use_tls = smtp_use_tls()
+
+    if port == 465:
+        with smtplib.SMTP_SSL(smtp_host(), port, timeout=30) as server:
+            server.login(smtp_username(), smtp_password())
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = cleaned_subject
+            msg["From"] = f"{from_name} <{sender}>"
+            msg["To"] = cleaned
+            if text_body:
+                msg.attach(MIMEText(text_body, "plain", "utf-8"))
+            if html_body:
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
+            server.sendmail(sender, [cleaned], msg.as_string())
+    else:
+        with smtplib.SMTP(smtp_host(), port, timeout=30) as server:
+            server.ehlo()
+            if use_tls:
+                server.starttls()
+                server.ehlo()
+            server.login(smtp_username(), smtp_password())
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = cleaned_subject
+            msg["From"] = f"{from_name} <{sender}>"
+            msg["To"] = cleaned
+            if text_body:
+                msg.attach(MIMEText(text_body, "plain", "utf-8"))
+            if html_body:
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
+            server.sendmail(sender, [cleaned], msg.as_string())
+
+    return {"sent": True, "recipient": cleaned}

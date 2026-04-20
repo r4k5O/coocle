@@ -230,3 +230,26 @@ def milestone_github_forks(fork_count: int, stars: int) -> MilestoneTemplate:
         html=_wrap_html(html_body, subtitle="GitHub-Meilenstein"),
         text=text,
     )
+
+
+def welcome_email(name: str | None = None) -> MilestoneTemplate:
+    subject = "Willkommen beim Coocle-Newsletter!"
+    greeting = f"Hallo {name}!" if name else "Hallo!"
+    html_body = f"""
+      <h2>Willkommen beim Coocle-Newsletter!</h2>
+      <p>{greeting} Danke, dass du dich fuer den Coocle-Newsletter angemeldet hast.</p>
+      <p>Coocle ist eine unabhaengige Open-Source-Suchmaschine. Du wirst Updates ueber neue Features, Meilensteine und wichtige Neuigkeiten erhalten.</p>
+      <p>Wenn du keine E-Mails mehr erhalten moechtest, kannst du dich jederzeit abmelden:</p>
+      <a href="https://coocle-ctp8.onrender.com/unsubscribe.html" class="cta">Newsletter abmelden</a>
+    """
+    text = (
+        f"{greeting} Danke, dass du dich fuer den Coocle-Newsletter angemeldet hast.\n\n"
+        f"Coocle ist eine unabhaengige Open-Source-Suchmaschine. Du wirst Updates ueber neue Features, Meilensteine und wichtige Neuigkeiten erhalten.\n\n"
+        f"Wenn du keine E-Mails mehr erhalten moechtest, kannst du dich jederzeit abmelden:\n"
+        f"https://coocle-ctp8.onrender.com/unsubscribe.html\n"
+    )
+    return MilestoneTemplate(
+        subject=subject,
+        html=_wrap_html(html_body, subtitle="Willkommen"),
+        text=text,
+    )

@@ -694,6 +694,22 @@ async def api_newsletter_subscribe(request: Request):
                 )
         except Exception:
             logger.exception("Newsletter subscriber mirror to Astra failed; continuing")
+    
+    # Send welcome email if configured and this is a new subscription
+    if created and _truthy_env("COOCLE_SEND_WELCOME_EMAIL", default=False):
+        try:
+            welcome_template = templatesmod.welcome_email(name=name)
+            await asyncio.to_thread(
+                directemailmod.send_single_email,
+                recipient=email,
+                subject=welcome_template["subject"],
+                html=welcome_template["html"],
+                text=welcome_template["text"],
+            )
+            logger.info("Welcome email sent to %s", email)
+        except Exception:
+            logger.exception("Welcome email failed for %s; continuing", email)
+    
     return {
         "ok": True,
         "created": created,
