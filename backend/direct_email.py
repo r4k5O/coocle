@@ -188,7 +188,7 @@ def _send_via_relay(
                 "from": from_addr,
                 "from_name": from_name,
             }
-            endpoint = f"{relay_url}/send-batch"
+            endpoint = f"{relay_url}/send-batches"
 
         response = httpx.post(
             endpoint,
