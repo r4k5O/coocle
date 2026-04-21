@@ -3,8 +3,13 @@ from __future__ import annotations
 import os
 import re
 import smtplib
+import socket
+import time
+import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,63}$", re.IGNORECASE)
 
@@ -46,11 +51,82 @@ def smtp_configured() -> bool:
     return bool(smtp_host() and smtp_username() and smtp_password())
 
 
+def smtp_max_retries() -> int:
+    raw = os.environ.get("SMTP_MAX_RETRIES", "3").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 3
+
+
+def smtp_retry_delay() -> float:
+    raw = os.environ.get("SMTP_RETRY_DELAY_S", "2").strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return 2.0
+
+
 def normalize_email(value: str | None) -> str | None:
     candidate = str(value or "").strip().lower()
     if not candidate or not EMAIL_RE.fullmatch(candidate):
         return None
     return candidate
+
+
+def _is_network_error(exc: Exception) -> bool:
+    """Check if error is a network-related issue (blocked port, timeout, etc)"""
+    return isinstance(exc, (
+        socket.timeout,
+        socket.gaierror,
+        TimeoutError,
+        ConnectionRefusedError,
+        ConnectionResetError,
+        OSError,
+    ))
+
+
+def _connect_with_retry(host: str, port: int, use_tls: bool, max_retries: int, retry_delay: float):
+    """Connect to SMTP server with retry logic for network issues"""
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            if port == 465:
+                server = smtplib.SMTP_SSL(host, port, timeout=30)
+            else:
+                server = smtplib.SMTP(host, port, timeout=30)
+                server.ehlo()
+                if use_tls:
+                    server.starttls()
+                    server.ehlo()
+
+            logger.info(f"SMTP connection successful on attempt {attempt + 1}/{max_retries}")
+            return server
+
+        except Exception as exc:
+            last_error = exc
+
+            if not _is_network_error(exc):
+                # Not a network error, don't retry
+                raise
+
+            logger.warning(f"SMTP connection attempt {attempt + 1}/{max_retries} failed: {exc}")
+
+            if attempt < max_retries - 1:
+                # Exponential backoff: delay * (2 ^ attempt)
+                wait_time = retry_delay * (2 ** attempt)
+                logger.info(f"Retrying SMTP connection in {wait_time}s...")
+                time.sleep(wait_time)
+
+    # All retries failed
+    error_msg = str(last_error) if last_error else "Unknown error"
+    raise RuntimeError(
+        f"SMTP connection failed after {max_retries} attempts. "
+        f"Last error: {error_msg}. "
+        f"Note: Render.com blocks outbound SMTP. "
+        f"See: https://render.com/docs/email"
+    )
 
 
 def send_email(
@@ -84,19 +160,22 @@ def send_email(
 
     port = smtp_port()
     use_tls = smtp_use_tls()
+    max_retries = smtp_max_retries()
+    retry_delay = smtp_retry_delay()
 
-    if port == 465:
-        with smtplib.SMTP_SSL(smtp_host(), port, timeout=30) as server:
-            server.login(smtp_username(), smtp_password())
-            server.sendmail(sender, [recipient], msg.as_string())
-    else:
-        with smtplib.SMTP(smtp_host(), port, timeout=30) as server:
-            server.ehlo()
-            if use_tls:
-                server.starttls()
-                server.ehlo()
-            server.login(smtp_username(), smtp_password())
-            server.sendmail(sender, [recipient], msg.as_string())
+    try:
+        server = _connect_with_retry(smtp_host(), port, use_tls, max_retries, retry_delay)
+    except RuntimeError:
+        raise
+
+    try:
+        server.login(smtp_username(), smtp_password())
+        server.sendmail(sender, [recipient], msg.as_string())
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
     return {"sent": True, "recipient": recipient}
 
@@ -128,17 +207,16 @@ def send_newsletter(
     from_name = os.environ.get("SMTP_SENDER_NAME", "Coocle").strip() or "Coocle"
     port = smtp_port()
     use_tls = smtp_use_tls()
+    max_retries = smtp_max_retries()
+    retry_delay = smtp_retry_delay()
+
     sent = 0
     errors: list[str] = []
 
-    if port == 465:
-        server = smtplib.SMTP_SSL(smtp_host(), port, timeout=30)
-    else:
-        server = smtplib.SMTP(smtp_host(), port, timeout=30)
-        server.ehlo()
-        if use_tls:
-            server.starttls()
-            server.ehlo()
+    try:
+        server = _connect_with_retry(smtp_host(), port, use_tls, max_retries, retry_delay)
+    except RuntimeError as exc:
+        raise RuntimeError(f"Newsletter-Versand fehlgeschlagen: {exc}") from exc
 
     try:
         server.login(smtp_username(), smtp_password())
