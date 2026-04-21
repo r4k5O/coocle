@@ -911,12 +911,37 @@ async def api_newsletter_check_milestones(
             logger.exception("Failed to send GitHub forks milestone newsletter")
             raise HTTPException(status_code=502, detail=f"GitHub-Forks-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
+    # Check for subscriber anniversaries
+    subscribers = dbmod.list_newsletter_subscribers(conn)
+    anniversary_count = 0
+    for subscriber in subscribers:
+        anniversary_years = templatesmod.detect_anniversary(
+            subscriber["subscribed_at"], subscriber["last_anniversary"]
+        )
+        if anniversary_years:
+            template = templatesmod.anniversary_email(anniversary_years, subscriber["name"])
+            try:
+                await asyncio.to_thread(
+                    directemailmod.send_newsletter,
+                    [subscriber["email"]],
+                    subject=template["subject"],
+                    html=template["html"],
+                    text=template["text"],
+                )
+                dbmod.update_subscriber_last_anniversary(conn, subscriber["email"], anniversary_years)
+                anniversary_count += 1
+                logger.info(f"Sent anniversary email to {subscriber['email']} for {anniversary_years} years")
+            except Exception as exc:
+                logger.exception(f"Failed to send anniversary email to {subscriber['email']}")
+                # Don't raise exception for individual anniversary failures
+
     return {
         "ok": True,
         "page_count": page_count,
         "subscriber_count": subscriber_count,
         "github_stats": github_stats,
         "sent_milestones": sent_milestones,
+        "sent_anniversaries": anniversary_count,
         "message": f"{len(sent_milestones)} Meilenstein-Newsletter(s) gesendet." if sent_milestones else "Keine neuen Meilensteine erreicht.",
     }
 

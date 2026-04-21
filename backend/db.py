@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS newsletter_subscribers (
   name TEXT,
   source_ip TEXT,
   subscribed_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  last_anniversary INTEGER DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS newsletter_milestones (
@@ -247,8 +248,8 @@ def upsert_newsletter_subscriber(
     created = existing is None
     conn.execute(
         """
-        INSERT INTO newsletter_subscribers(email, name, source_ip, subscribed_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO newsletter_subscribers(email, name, source_ip, subscribed_at, updated_at, last_anniversary)
+        VALUES (?, ?, ?, ?, ?, NULL)
         ON CONFLICT(email) DO UPDATE SET
           name = COALESCE(excluded.name, newsletter_subscribers.name),
           source_ip = COALESCE(excluded.source_ip, newsletter_subscribers.source_ip),
@@ -265,10 +266,39 @@ def list_newsletter_subscriber_emails(conn: sqlite3.Connection) -> list[str]:
         """
         SELECT email
         FROM newsletter_subscribers
-        ORDER BY subscribed_at, email
-        """
+        ORDER BY subscribed_at DESC
+        """,
     ).fetchall()
-    return [str(row["email"]) for row in rows if row["email"]]
+    return [row[0] for row in rows]
+
+
+def list_newsletter_subscribers(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    """Get all subscribers with their details including subscribed_at and last_anniversary."""
+    rows = conn.execute(
+        """
+        SELECT email, name, subscribed_at, last_anniversary
+        FROM newsletter_subscribers
+        ORDER BY subscribed_at ASC
+        """,
+    ).fetchall()
+    return [
+        {
+            "email": row[0],
+            "name": row[1],
+            "subscribed_at": row[2],
+            "last_anniversary": row[3],
+        }
+        for row in rows
+    ]
+
+
+def update_subscriber_last_anniversary(conn: sqlite3.Connection, email: str, years: int) -> None:
+    """Update the last anniversary sent for a subscriber."""
+    conn.execute(
+        "UPDATE newsletter_subscribers SET last_anniversary = ? WHERE email = ?",
+        (years, email),
+    )
+    conn.commit()
 
 
 def count_newsletter_subscribers(conn: sqlite3.Connection) -> int:

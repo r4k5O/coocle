@@ -144,6 +144,7 @@ def milestone_feature(feature_name: str, description: str) -> MilestoneTemplate:
 
 MILESTONE_PAGE_THRESHOLDS = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
 MILESTONE_SUBSCRIBER_THRESHOLDS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+ANNIVERSARY_THRESHOLDS = [1, 2, 3, 5, 10]  # Years
 
 
 def detect_page_milestone(current_count: int, last_milestone: int | None) -> int | None:
@@ -166,6 +167,26 @@ def detect_subscriber_milestone(current_count: int, last_milestone: int | None) 
             continue
         threshold = t
     return threshold if threshold > 0 else None
+
+
+def detect_anniversary(subscribed_at: str, last_anniversary: int | None) -> int | None:
+    """Detect if subscriber has reached an anniversary milestone."""
+    from datetime import datetime
+    try:
+        sub_date = datetime.fromisoformat(subscribed_at.replace("Z", "+00:00"))
+        now = datetime.now(sub_date.tzinfo)
+        years = (now - sub_date).days // 365
+    except Exception:
+        return None
+    
+    if years <= 0:
+        return None
+    
+    for threshold in ANNIVERSARY_THRESHOLDS:
+        if years == threshold:
+            if last_anniversary is None or threshold > last_anniversary:
+                return threshold
+    return None
 
 
 def milestone_github_stars(star_count: int, forks: int, open_prs: int) -> MilestoneTemplate:
@@ -251,5 +272,28 @@ def welcome_email(name: str | None = None) -> MilestoneTemplate:
     return MilestoneTemplate(
         subject=subject,
         html=_wrap_html(html_body, subtitle="Willkommen"),
+        text=text,
+    )
+
+
+def anniversary_email(years: int, name: str | None = None) -> MilestoneTemplate:
+    subject = f"{years} Jahre Coocle-Newsletter!"
+    greeting = f"Hallo {name}!" if name else "Hallo!"
+    html_body = f"""
+      <h2>{years} Jahre dabei!</h2>
+      <p>{greeting} Du bist seit {years} Jahren Teil des Coocle-Newsletters. Danke fuer deine Treue!</p>
+      <p>In den letzten {years} Jahren hat Coocle sich weiterentwickelt und ist zu einer besseren Suchmaschine geworden. Das waere ohne dich und andere Abonnenten nicht moeglich.</p>
+      <p>Wir freuen uns auf weitere Jahre mit dir!</p>
+      <a href="https://coocle-ctp8.onrender.com" class="cta">Coocle besuchen</a>
+    """
+    text = (
+        f"{greeting} Du bist seit {years} Jahren Teil des Coocle-Newsletters. Danke fuer deine Treue!\n\n"
+        f"In den letzten {years} Jahren hat Coocle sich weiterentwickelt und ist zu einer besseren Suchmaschine geworden.\n\n"
+        f"Wir freuen uns auf weitere Jahre mit dir!\n\n"
+        f"Coocle besuchen: https://coocle-ctp8.onrender.com\n"
+    )
+    return MilestoneTemplate(
+        subject=subject,
+        html=_wrap_html(html_body, subtitle=f"{years}. Jubiläum"),
         text=text,
     )
