@@ -194,7 +194,7 @@ def _send_via_relay(
             endpoint,
             json=payload,
             headers={"X-Relay-Token": relay_token},
-            timeout=30.0,
+            timeout=10.0,
         )
         response.raise_for_status()
 
