@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/send",
+      "destination": "/api/send"
+    },
+    {
+      "source": "/send-batches",
+      "destination": "/api/send-batches"
+    },
+    {
+      "source": "/health",
+      "destination": "/api"
+    }
+  ]
+}
