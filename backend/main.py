@@ -448,6 +448,32 @@ async def lifespan(fastapi_app: FastAPI):
     }
     fastapi_app.state.stop_event = asyncio.Event()
     fastapi_app.state.crawler_task = None
+    fastapi_app.state.milestone_check_task = None
+
+    # Start background milestone checker
+    async def milestone_checker():
+        interval = _int_env("COOCLE_MILESTONE_CHECK_INTERVAL_SECONDS", 120)  # Default 2 minutes
+        logger.info(f"Starting milestone checker with {interval}s interval")
+        while not fastapi_app.state.stop_event.is_set():
+            try:
+                result = await _check_newsletter_milestones(fastapi_app.state.conn)
+                if result.get("ok"):
+                    sent = len(result.get("sent_milestones", [])) + result.get("sent_anniversaries", 0)
+                    if sent > 0:
+                        logger.info(f"Milestone check: sent {sent} email(s)")
+            except Exception:
+                logger.exception("Milestone check failed")
+            # Wait for interval or stop event
+            try:
+                await asyncio.wait_for(
+                    fastapi_app.state.stop_event.wait(),
+                    timeout=interval,
+                )
+            except asyncio.TimeoutError:
+                pass  # Normal timeout, continue loop
+
+    if _truthy_env("COOCLE_ENABLE_MILESTONE_CHECKER", default=True):
+        fastapi_app.state.milestone_check_task = asyncio.create_task(milestone_checker())
 
     try:
         async def set_crawl_status(payload: dict) -> None:
@@ -806,22 +832,26 @@ async def api_newsletter_send(
     }
 
 
-@app.post("/api/newsletter/check-milestones")
-async def api_newsletter_check_milestones(
-    request: Request,
-    x_admin_token: Annotated[str | None, Header()] = None,
-):
-    _require_newsletter_admin_token(x_admin_token)
+async def _check_newsletter_milestones(conn: sqlite3.Connection) -> dict[str, object]:
+    """Check for milestone and anniversary emails. Returns result dict."""
+    from datetime import datetime, timezone
 
     if not directemailmod.smtp_configured():
-        raise HTTPException(status_code=503, detail="SMTP fuer Newsletter ist nicht konfiguriert.")
-
-    conn = _conn_from_request(request)
-    from datetime import datetime, timezone
+        logger.warning("SMTP not configured, skipping milestone check")
+        return {"ok": False, "error": "SMTP not configured"}
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    stats = build_stats_payload(request, conn, db_path=str(_db_path()))
+    # Build stats using a fake request (for build_stats_payload)
+    class FakeRequest:
+        def __init__(self):
+            self.app = type('obj', (object,), {'state': type('obj', (object,), {'conn': conn})})()
+    
+    try:
+        stats = build_stats_payload(FakeRequest(), conn, db_path=str(_db_path()))
+    except Exception:
+        stats = {}
+    
     page_count = int(stats.get("pages", 0))
     subscriber_count = dbmod.count_newsletter_subscribers(conn)
 
@@ -861,7 +891,6 @@ async def api_newsletter_check_milestones(
             sent_milestones.append({"kind": "pages", "value": page_threshold, **result})
         except Exception as exc:
             logger.exception("Failed to send page milestone newsletter")
-            raise HTTPException(status_code=502, detail=f"Seiten-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
     if subscriber_threshold:
         template = templatesmod.milestone_subscribers(subscriber_threshold)
@@ -877,7 +906,6 @@ async def api_newsletter_check_milestones(
             sent_milestones.append({"kind": "subscribers", "value": subscriber_threshold, **result})
         except Exception as exc:
             logger.exception("Failed to send subscriber milestone newsletter")
-            raise HTTPException(status_code=502, detail=f"Abonnenten-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
     if star_threshold and github_stats:
         template = templatesmod.milestone_github_stars(star_threshold, github_stats["forks"], github_stats["open_prs"])
@@ -893,7 +921,6 @@ async def api_newsletter_check_milestones(
             sent_milestones.append({"kind": "github_stars", "value": star_threshold, **result})
         except Exception as exc:
             logger.exception("Failed to send GitHub stars milestone newsletter")
-            raise HTTPException(status_code=502, detail=f"GitHub-Stars-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
     if fork_threshold and github_stats:
         template = templatesmod.milestone_github_forks(fork_threshold, github_stats["stars"])
@@ -909,7 +936,6 @@ async def api_newsletter_check_milestones(
             sent_milestones.append({"kind": "github_forks", "value": fork_threshold, **result})
         except Exception as exc:
             logger.exception("Failed to send GitHub forks milestone newsletter")
-            raise HTTPException(status_code=502, detail=f"GitHub-Forks-Milestone-Versand fehlgeschlagen: {exc}") from exc
 
     # Check for subscriber anniversaries
     subscribers = dbmod.list_newsletter_subscribers(conn)
@@ -933,7 +959,6 @@ async def api_newsletter_check_milestones(
                 logger.info(f"Sent anniversary email to {subscriber['email']} for {anniversary_years} years")
             except Exception as exc:
                 logger.exception(f"Failed to send anniversary email to {subscriber['email']}")
-                # Don't raise exception for individual anniversary failures
 
     return {
         "ok": True,
@@ -942,8 +967,24 @@ async def api_newsletter_check_milestones(
         "github_stats": github_stats,
         "sent_milestones": sent_milestones,
         "sent_anniversaries": anniversary_count,
-        "message": f"{len(sent_milestones)} Meilenstein-Newsletter(s) gesendet." if sent_milestones else "Keine neuen Meilensteine erreicht.",
     }
+
+
+@app.post("/api/newsletter/check-milestones")
+async def api_newsletter_check_milestones(
+    request: Request,
+    x_admin_token: Annotated[str | None, Header()] = None,
+):
+    _require_newsletter_admin_token(x_admin_token)
+
+    conn = _conn_from_request(request)
+    result = await _check_newsletter_milestones(conn)
+    
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error", "Fehler beim Prüfen der Meilensteine"))
+    
+    result["message"] = f"{len(result.get('sent_milestones', []))} Meilenstein-Newsletter(s) gesendet." if result.get('sent_milestones') else "Keine neuen Meilensteine erreicht."
+    return result
 
 
 @app.get("/api/healthz")

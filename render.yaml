@@ -46,3 +46,7 @@ services:
         value: Coocle
       - key: COOCLE_NEWSLETTER_ADMIN_TOKEN
         sync: false
+      - key: COOCLE_ENABLE_MILESTONE_CHECKER
+        value: "1"
+      - key: COOCLE_MILESTONE_CHECK_INTERVAL_SECONDS
+        value: "120"
