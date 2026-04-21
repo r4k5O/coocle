@@ -63,8 +63,11 @@ def smtp_configured() -> bool:
 
 
 def smtp_relay_configured() -> bool:
-    """Check if HTTP relay fallback is configured"""
-    return bool(smtp_relay_url() and smtp_relay_token())
+    """Check if HTTP relay fallback is configured and enabled"""
+    if not smtp_relay_url() or not smtp_relay_token():
+        return False
+    use_relay = os.environ.get("SMTP_USE_RELAY", "true").strip().lower()
+    return use_relay in ("1", "true", "yes", "on")
 
 
 def smtp_max_retries() -> int:
