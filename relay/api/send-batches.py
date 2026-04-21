@@ -18,8 +18,8 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes", "on")
-SMTP_MAX_RETRIES = int(os.environ.get("SMTP_MAX_RETRIES", "3"))
-SMTP_RETRY_DELAY = float(os.environ.get("SMTP_RETRY_DELAY", "2"))
+SMTP_MAX_RETRIES = int(os.environ.get("SMTP_MAX_RETRIES", "2"))
+SMTP_RETRY_DELAY = float(os.environ.get("SMTP_RETRY_DELAY", "1"))
 
 
 def _is_network_error(exc: Exception) -> bool:
@@ -41,9 +41,9 @@ def _connect_with_retry():
     for attempt in range(SMTP_MAX_RETRIES):
         try:
             if SMTP_PORT == 465:
-                server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30)
+                server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10)
             else:
-                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30)
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
                 server.ehlo()
                 if SMTP_USE_TLS:
                     server.starttls()
