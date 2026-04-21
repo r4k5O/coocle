@@ -17,7 +17,7 @@ concurrency:
 jobs:
   workflow:
     name: Workflow Validation
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
 
   config:
     name: Config Validation
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
       - name: Checkout
@@ -55,7 +55,7 @@ jobs:
 
   backend:
     name: Backend Tests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - workflow
       - config
@@ -84,7 +84,7 @@ jobs:
 
   frontend:
     name: Frontend Checks
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - workflow
       - config
@@ -106,7 +106,7 @@ jobs:
 
   smoke:
     name: App Smoke Test
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - workflow
       - config
