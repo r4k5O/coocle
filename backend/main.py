@@ -838,7 +838,7 @@ async def _check_newsletter_milestones(conn: sqlite3.Connection) -> dict[str, ob
 
     if not directemailmod.smtp_configured():
         logger.warning("SMTP not configured, skipping milestone check")
-        return {"ok": False, "error": "SMTP not configured"}
+        return {"ok": False, "error": "SMTP fuer Newsletter ist nicht konfiguriert."}
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
