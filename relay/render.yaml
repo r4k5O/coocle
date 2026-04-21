@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: smtp-relay
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT smtp_relay:app
+    envVars:
+      - key: RELAY_TOKEN
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_USE_TLS
+        value: "true"
+      - key: SMTP_MAX_RETRIES
+        value: "3"
+      - key: SMTP_RETRY_DELAY
+        value: "2"
