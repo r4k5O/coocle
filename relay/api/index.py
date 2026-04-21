@@ -108,6 +108,7 @@ class handler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests"""
+        logger.info(f"POST request received for path: {self.path}")
         if not self._check_auth():
             return
         
