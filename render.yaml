@@ -50,3 +50,7 @@ services:
         value: "1"
       - key: COOCLE_MILESTONE_CHECK_INTERVAL_SECONDS
         value: "120"
+      - key: SMTP_RELAY_URL
+        sync: false
+      - key: SMTP_RELAY_TOKEN
+        sync: false

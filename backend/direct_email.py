@@ -6,6 +6,7 @@ import smtplib
 import socket
 import time
 import logging
+import httpx
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -47,8 +48,23 @@ def smtp_recipient_email() -> str:
     return os.environ.get("SMTP_RECIPIENT_EMAIL", "").strip() or smtp_username()
 
 
+def smtp_relay_url() -> str:
+    """HTTP relay endpoint for Render (when direct SMTP is blocked)"""
+    return os.environ.get("SMTP_RELAY_URL", "").strip()
+
+
+def smtp_relay_token() -> str:
+    """Authentication token for HTTP relay"""
+    return os.environ.get("SMTP_RELAY_TOKEN", "").strip()
+
+
 def smtp_configured() -> bool:
     return bool(smtp_host() and smtp_username() and smtp_password())
+
+
+def smtp_relay_configured() -> bool:
+    """Check if HTTP relay fallback is configured"""
+    return bool(smtp_relay_url() and smtp_relay_token())
 
 
 def smtp_max_retries() -> int:
@@ -129,6 +145,68 @@ def _connect_with_retry(host: str, port: int, use_tls: bool, max_retries: int, r
     )
 
 
+def _send_via_relay(
+    recipients: list[str],
+    subject: str,
+    text: str | None,
+    html: str | None,
+    from_addr: str | None = None,
+    from_name: str | None = None,
+) -> dict[str, object]:
+    """Send email via HTTP relay when direct SMTP fails"""
+    relay_url = smtp_relay_url()
+    relay_token = smtp_relay_token()
+
+    if not relay_url or not relay_token:
+        raise RuntimeError("SMTP relay is not configured (SMTP_RELAY_URL, SMTP_RELAY_TOKEN)")
+
+    from_addr = from_addr or smtp_sender_email()
+    from_name = from_name or os.environ.get("SMTP_SENDER_NAME", "Coocle").strip() or "Coocle"
+
+    try:
+        if len(recipients) == 1:
+            # Single recipient
+            payload = {
+                "to": recipients,
+                "subject": subject,
+                "text": text,
+                "html": html,
+                "from": from_addr,
+                "from_name": from_name,
+            }
+            endpoint = f"{relay_url}/send"
+        else:
+            # Multiple recipients (batch)
+            payload = {
+                "recipients": recipients,
+                "subject": subject,
+                "text": text,
+                "html": html,
+                "from": from_addr,
+                "from_name": from_name,
+            }
+            endpoint = f"{relay_url}/send-batch"
+
+        response = httpx.post(
+            endpoint,
+            json=payload,
+            headers={"X-Relay-Token": relay_token},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        logger.info(f"Email sent via relay to {recipients}: {result}")
+        return {"sent": result.get("sent", 1), "batches": 1, "via": "smtp_relay"}
+
+    except httpx.HTTPStatusError as exc:
+        logger.error(f"Relay HTTP error {exc.response.status_code}: {exc.response.text}")
+        raise RuntimeError(f"SMTP relay error ({exc.response.status_code}): {exc.response.text}") from exc
+    except Exception as exc:
+        logger.error(f"Relay connection error: {exc}")
+        raise RuntimeError(f"SMTP relay connection failed: {exc}") from exc
+
+
 def send_email(
     *,
     from_name: str | None = None,
@@ -165,7 +243,18 @@ def send_email(
 
     try:
         server = _connect_with_retry(smtp_host(), port, use_tls, max_retries, retry_delay)
-    except RuntimeError:
+    except RuntimeError as exc:
+        # SMTP failed - try relay fallback
+        if smtp_relay_configured():
+            logger.info(f"SMTP failed, using relay fallback: {exc}")
+            return _send_via_relay(
+                recipients=[recipient],
+                subject=subject,
+                text=body_text,
+                html=body_html,
+                from_addr=sender,
+                from_name=from_name,
+            )
         raise
 
     try:
@@ -216,6 +305,17 @@ def send_newsletter(
     try:
         server = _connect_with_retry(smtp_host(), port, use_tls, max_retries, retry_delay)
     except RuntimeError as exc:
+        # SMTP failed - try relay fallback
+        if smtp_relay_configured():
+            logger.info(f"Newsletter: SMTP failed, using relay fallback: {exc}")
+            return _send_via_relay(
+                recipients=cleaned,
+                subject=cleaned_subject,
+                text=text_body,
+                html=html_body,
+                from_addr=sender,
+                from_name=from_name,
+            )
         raise RuntimeError(f"Newsletter-Versand fehlgeschlagen: {exc}") from exc
 
     try:
