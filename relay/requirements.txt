@@ -1,2 +1,1 @@
-flask
-gunicorn
+# No external dependencies needed - using Python stdlib only

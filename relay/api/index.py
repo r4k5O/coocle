@@ -6,7 +6,6 @@ import logging
 import json
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from http.server import BaseHTTPRequestHandler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,86 +74,94 @@ def _connect_with_retry():
     )
 
 
-class handler(BaseHTTPRequestHandler):
-    """Vercel serverless function handler using BaseHTTPRequestHandler"""
+def handler(request):
+    """Vercel serverless function handler"""
+    logger.info(f"Request received: method={request.method}, url={request.url}")
     
-    def _send_json_response(self, status_code, data):
-        """Send JSON response"""
-        self.send_response(status_code)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode('utf-8'))
+    # Handle GET requests
+    if request.method == "GET":
+        path = request.path
+        if path == "/health" or path == "/api/health":
+            return {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"status": "ok", "relay": "smtp-http"})
+            }
+        return {
+            "status": 404,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Not found"})
+        }
     
-    def _get_request_body(self):
-        """Get request body"""
-        content_length = int(self.headers.get('Content-Length', 0))
-        return self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ''
-    
-    def _check_auth(self):
-        """Check authentication"""
-        token = self.headers.get('X-Relay-Token', '')
+    # Handle POST requests
+    if request.method == "POST":
+        # Check authentication
+        token = request.headers.get("X-Relay-Token", "")
         if not RELAY_TOKEN or token != RELAY_TOKEN:
-            self._send_json_response(401, {'error': 'Unauthorized'})
-            return False
-        return True
-    
-    def do_GET(self):
-        """Handle GET requests"""
-        logger.info(f"GET request received for path: {self.path}")
-        if self.path == '/api/health' or self.path == '/health' or self.path == '/api':
-            self._send_json_response(200, {'status': 'ok', 'relay': 'smtp-http'})
-        else:
-            self._send_json_response(404, {'error': 'Not found'})
-    
-    def do_POST(self):
-        """Handle POST requests"""
-        logger.info(f"POST request received for path: {self.path}")
-        if not self._check_auth():
-            return
+            logger.warning("Unauthorized relay request")
+            return {
+                "status": 401,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": "Unauthorized"})
+            }
         
         try:
-            body = self._get_request_body()
+            body = request.body
             data = json.loads(body) if body else {}
+            path = request.path
             
             # Send endpoint
-            if self.path in ('/api/send', '/send'):
-                recipients = data.get('to', [])
-                subject = data.get('subject', '')
-                text_body = data.get('text', '')
-                html_body = data.get('html', '')
-                from_addr = data.get('from', SMTP_USERNAME)
-                from_name = data.get('from_name', '')
+            if path in ("/send", "/api/send"):
+                recipients = data.get("to", [])
+                subject = data.get("subject", "")
+                text_body = data.get("text", "")
+                html_body = data.get("html", "")
+                from_addr = data.get("from", SMTP_USERNAME)
+                from_name = data.get("from_name", "")
                 
                 if not recipients or not isinstance(recipients, list):
-                    self._send_json_response(400, {'error': 'Invalid or missing "to" field'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Invalid or missing "to" field'})
+                    }
                 if not subject:
-                    self._send_json_response(400, {'error': 'Missing "subject"'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Missing "subject"'})
+                    }
                 if not text_body and not html_body:
-                    self._send_json_response(400, {'error': 'Either "text" or "html" required'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Either "text" or "html" required'})
+                    }
                 
-                msg = MIMEMultipart('alternative')
-                msg['Subject'] = subject
-                msg['From'] = f"{from_name} <{from_addr}>" if from_name else from_addr
-                msg['To'] = ', '.join(recipients)
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = f"{from_name} <{from_addr}>" if from_name else from_addr
+                msg["To"] = ", ".join(recipients)
                 
                 if text_body:
-                    msg.attach(MIMEText(text_body, 'plain', 'utf-8'))
+                    msg.attach(MIMEText(text_body, "plain", "utf-8"))
                 if html_body:
-                    msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+                    msg.attach(MIMEText(html_body, "html", "utf-8"))
                 
                 try:
                     server = _connect_with_retry()
                     server.login(SMTP_USERNAME, SMTP_PASSWORD)
                     server.sendmail(from_addr, recipients, msg.as_string())
                     logger.info(f"Email sent to {recipients} via {SMTP_HOST}")
-                    self._send_json_response(200, {
-                        'ok': True,
-                        'sent': 1,
-                        'recipients': recipients,
-                    })
+                    return {
+                        "status": 200,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({
+                            "ok": True,
+                            "sent": 1,
+                            "recipients": recipients,
+                        })
+                    }
                 finally:
                     try:
                         server.quit()
@@ -162,23 +169,32 @@ class handler(BaseHTTPRequestHandler):
                         pass
             
             # Send-batch endpoint
-            elif self.path in ('/api/send-batch', '/send-batch', '/api/send-batches', '/send-batches'):
-                recipients = data.get('recipients', [])
-                subject = data.get('subject', '')
-                text_body = data.get('text', '')
-                html_body = data.get('html', '')
-                from_addr = data.get('from', SMTP_USERNAME)
-                from_name = data.get('from_name', '')
+            elif path in ("/send-batch", "/send-batches", "/api/send-batch", "/api/send-batches"):
+                recipients = data.get("recipients", [])
+                subject = data.get("subject", "")
+                text_body = data.get("text", "")
+                html_body = data.get("html", "")
+                from_addr = data.get("from", SMTP_USERNAME)
+                from_name = data.get("from_name", "")
                 
                 if not recipients or not isinstance(recipients, list):
-                    self._send_json_response(400, {'error': 'Invalid or missing "recipients" field'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Invalid or missing "recipients" field'})
+                    }
                 if not subject:
-                    self._send_json_response(400, {'error': 'Missing "subject"'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Missing "subject"'})
+                    }
                 if not text_body and not html_body:
-                    self._send_json_response(400, {'error': 'Either "text" or "html" required'})
-                    return
+                    return {
+                        "status": 400,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": 'Either "text" or "html" required'})
+                    }
                 
                 sent = 0
                 errors = []
@@ -189,15 +205,15 @@ class handler(BaseHTTPRequestHandler):
                     
                     for recipient in recipients:
                         try:
-                            msg = MIMEMultipart('alternative')
-                            msg['Subject'] = subject
-                            msg['From'] = f"{from_name} <{from_addr}>" if from_name else from_addr
-                            msg['To'] = recipient
+                            msg = MIMEMultipart("alternative")
+                            msg["Subject"] = subject
+                            msg["From"] = f"{from_name} <{from_addr}>" if from_name else from_addr
+                            msg["To"] = recipient
                             
                             if text_body:
-                                msg.attach(MIMEText(text_body, 'plain', 'utf-8'))
+                                msg.attach(MIMEText(text_body, "plain", "utf-8"))
                             if html_body:
-                                msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+                                msg.attach(MIMEText(html_body, "html", "utf-8"))
                             
                             server.sendmail(from_addr, [recipient], msg.as_string())
                             sent += 1
@@ -207,12 +223,16 @@ class handler(BaseHTTPRequestHandler):
                             errors.append(f"{recipient}: {str(e)}")
                     
                     logger.info(f"Batch send: {sent}/{len(recipients)} sent successfully")
-                    self._send_json_response(200, {
-                        'ok': True,
-                        'sent': sent,
-                        'total': len(recipients),
-                        'errors': errors if errors else None,
-                    })
+                    return {
+                        "status": 200,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({
+                            "ok": True,
+                            "sent": sent,
+                            "total": len(recipients),
+                            "errors": errors if errors else None,
+                        })
+                    }
                 finally:
                     try:
                         server.quit()
@@ -220,11 +240,29 @@ class handler(BaseHTTPRequestHandler):
                         pass
             
             else:
-                self._send_json_response(404, {'error': 'Not found'})
+                return {
+                    "status": 404,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Not found"})
+                }
         
         except smtplib.SMTPException as exc:
             logger.error(f"SMTP error: {exc}")
-            self._send_json_response(502, {'error': f'SMTP error: {exc}'})
+            return {
+                "status": 502,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": f"SMTP error: {exc}"})
+            }
         except Exception as exc:
             logger.error(f"Relay error: {exc}")
-            self._send_json_response(500, {'error': str(exc)})
+            return {
+                "status": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": str(exc)})
+            }
+    
+    return {
+        "status": 405,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"error": "Method not allowed"})
+    }

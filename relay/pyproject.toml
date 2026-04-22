@@ -1,0 +1,9 @@
+[project]
+name = "smtp-relay"
+version = "1.0.0"
+description = "SMTP HTTP Relay for Vercel"
+requires-python = ">=3.8"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -170,37 +170,38 @@ def _send_via_relay(
         if len(recipients) == 1:
             # Single recipient
             payload = {
-                "to": recipients,
+                "to": recipients[0],
                 "subject": subject,
-                "text": text,
+                "body": text,
                 "html": html,
-                "from": from_addr,
-                "from_name": from_name,
             }
-            endpoint = f"{relay_url}/send"
+            endpoint = f"{relay_url}/api/send"
         else:
             # Multiple recipients (batch)
             payload = {
-                "recipients": recipients,
-                "subject": subject,
-                "text": text,
-                "html": html,
-                "from": from_addr,
-                "from_name": from_name,
+                "emails": [
+                    {
+                        "to": recipient,
+                        "subject": subject,
+                        "body": text,
+                        "html": html,
+                    }
+                    for recipient in recipients
+                ]
             }
-            endpoint = f"{relay_url}/send-batches"
+            endpoint = f"{relay_url}/api/send-batches"
 
         response = httpx.post(
             endpoint,
             json=payload,
-            headers={"X-Relay-Token": relay_token},
-            timeout=10.0,
+            headers={"Authorization": f"Bearer {relay_token}"},
+            timeout=30.0,
         )
         response.raise_for_status()
 
         result = response.json()
         logger.info(f"Email sent via relay to {recipients}: {result}")
-        return {"sent": result.get("sent", 1), "batches": 1, "via": "smtp_relay"}
+        return {"sent": result.get("sent", len(recipients)), "batches": 1, "via": "smtp_relay"}
 
     except httpx.HTTPStatusError as exc:
         logger.error(f"Relay HTTP error {exc.response.status_code}: {exc.response.text}")
